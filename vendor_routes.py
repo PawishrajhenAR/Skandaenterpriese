@@ -153,7 +153,29 @@ def edit(id):
 @login_required
 @permission_required('delete_vendor')
 def delete(id):
+    from models import Bill, ProxyBill, CreditEntry
+    
     vendor = Vendor.query.get_or_404(id)
+    
+    # Check if vendor has associated bills
+    bill_count = Bill.query.filter_by(vendor_id=vendor.id).count()
+    proxy_bill_count = ProxyBill.query.filter_by(vendor_id=vendor.id).count()
+    credit_count = CreditEntry.query.filter_by(vendor_id=vendor.id).count()
+    
+    if bill_count > 0 or proxy_bill_count > 0 or credit_count > 0:
+        error_msg = f'Cannot delete vendor "{vendor.name}" because it has '
+        parts = []
+        if bill_count > 0:
+            parts.append(f'{bill_count} bill(s)')
+        if proxy_bill_count > 0:
+            parts.append(f'{proxy_bill_count} proxy bill(s)')
+        if credit_count > 0:
+            parts.append(f'{credit_count} credit entr{"y" if credit_count == 1 else "ies"}')
+        error_msg += ', '.join(parts) + ' associated with it.'
+        flash(error_msg, 'danger')
+        return redirect(url_for('vendor.list'))
+    
+    # Safe to delete - no associated records
     db.session.delete(vendor)
     db.session.commit()
     log_action(current_user, 'DELETE_VENDOR', 'VENDOR', vendor.id)

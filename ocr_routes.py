@@ -59,26 +59,42 @@ def upload():
             filepath = upload_folder / filename
             file.save(str(filepath))
             
-            # Run OCR
+            # Run OCR with error handling
             relative_path = f"uploads/bills/{filename}"
-            ocr_text = run_ocr(str(filepath))
+            try:
+                ocr_text = run_ocr(str(filepath))
+                
+                # Check if OCR returned an error message
+                if ocr_text.startswith("OCR error:") or ocr_text.startswith("Error:"):
+                    flash(f'OCR processing failed: {ocr_text}', 'danger')
+                    # Still save the file but without OCR text
+                    ocr_text = None
+            except Exception as e:
+                flash(f'OCR processing error: {str(e)}', 'danger')
+                ocr_text = None
             
-            # Create OCR job
+            # Create OCR job (even if OCR failed, we still save the image)
             ocr_job = OCRJob(
                 tenant_id=tenant.id,
                 bill_id=bill.id,
                 image_path=relative_path,
-                raw_text=ocr_text
+                raw_text=ocr_text or "OCR processing failed or not available."
             )
             db.session.add(ocr_job)
             
             # Update bill
             bill.image_path = relative_path
-            bill.ocr_text = ocr_text
+            if ocr_text:
+                bill.ocr_text = ocr_text
             
             db.session.commit()
             log_action(current_user, 'UPLOAD_OCR', 'BILL', bill.id)
-            flash('OCR image uploaded and processed.', 'success')
+            
+            if ocr_text and not ocr_text.startswith("OCR error:") and not ocr_text.startswith("Error:"):
+                flash('OCR image uploaded and processed successfully.', 'success')
+            else:
+                flash('Image uploaded but OCR processing failed. You can view the image manually.', 'warning')
+            
             return redirect(url_for('ocr.view', id=ocr_job.id))
         else:
             flash('Invalid file type.', 'danger')

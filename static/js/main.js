@@ -4,11 +4,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize toast notifications
     const toastElements = document.querySelectorAll('.toast');
     toastElements.forEach(function(toastEl) {
+        // Ensure each toast only shows once
+        if (toastEl.classList.contains('showing') || toastEl.classList.contains('show')) {
+            return;
+        }
+        
         const toast = new bootstrap.Toast(toastEl, {
             autohide: true,
-            delay: 5000
+            delay: 4000
         });
-        toast.show();
+        
+        // Show toast with smooth animation
+        setTimeout(function() {
+            toast.show();
+        }, 100);
         
         // Remove toast element from DOM after it's hidden
         toastEl.addEventListener('hidden.bs.toast', function() {
@@ -43,13 +52,22 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Popover(popoverTriggerEl);
     });
     
-    // Mobile menu toggle
-    const navbarToggler = document.querySelector('.navbar-toggler');
-    if (navbarToggler) {
-        navbarToggler.addEventListener('click', function() {
-            const sidebar = document.querySelector('.sidebar-container');
-            if (sidebar) {
-                sidebar.classList.toggle('d-block');
+    // Mobile menu toggle (Updated for new design)
+    const sidebarToggle = document.querySelector('.sidebar-toggle');
+    const sidebar = document.querySelector('.app-sidebar');
+    
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', function() {
+            sidebar.classList.toggle('show');
+        });
+        
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const isClickInsideSidebar = sidebar.contains(event.target);
+            const isClickOnToggle = sidebarToggle.contains(event.target);
+            
+            if (window.innerWidth <= 768 && !isClickInsideSidebar && !isClickOnToggle && sidebar.classList.contains('show')) {
+                sidebar.classList.remove('show');
             }
         });
     }
@@ -189,8 +207,10 @@ function hideLoading() {
 // Form submission with loading
 document.addEventListener('submit', function(e) {
     const form = e.target;
-    if (form.tagName === 'FORM' && !form.classList.contains('no-loading')) {
-        showLoading();
+    // Don't show loading for filter forms on input change (handled by debounce)
+    // or if explicitly opted out
+    if (form.tagName === 'FORM' && !form.classList.contains('no-loading') && e.submitter) {
+         showLoading();
     }
 });
 

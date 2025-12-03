@@ -262,20 +262,34 @@ def ocr_upload():
         filepath = upload_folder / filename
         file.save(str(filepath))
         
-        # Run OCR
-        ocr_text = run_ocr(str(filepath))
-        
-        # Try to extract basic info from OCR text
-        suggestions = extract_bill_info(ocr_text)
-        
-        return jsonify({
-            'success': True,
-            'ocr_text': ocr_text,
-            'image_path': f"uploads/bills/{filename}",
-            'suggestions': suggestions
-        })
+        # Run OCR with error handling
+        try:
+            ocr_text = run_ocr(str(filepath))
+            
+            # Check if OCR returned an error message
+            if ocr_text.startswith("OCR error:") or ocr_text.startswith("Error:") or "not installed" in ocr_text.lower():
+                return jsonify({
+                    'success': False,
+                    'error': ocr_text
+                }), 500
+            
+            # Try to extract basic info from OCR text
+            suggestions = extract_bill_info(ocr_text)
+            
+            return jsonify({
+                'success': True,
+                'ocr_text': ocr_text,
+                'image_path': f"uploads/bills/{filename}",
+                'suggestions': suggestions
+            })
+        except Exception as ocr_error:
+            return jsonify({
+                'success': False,
+                'error': f'OCR processing failed: {str(ocr_error)}'
+            }), 500
+            
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
 
 
 @bill_bp.route('/new', methods=['GET', 'POST'])
@@ -386,26 +400,281 @@ def create():
 
 
 def extract_bill_info(ocr_text):
-    """Simple extraction of bill information from OCR text"""
-    suggestions = {}
-    lines = ocr_text.split('\n')
-    
-    # Try to find bill number
-    for line in lines:
-        if 'bill' in line.lower() or 'invoice' in line.lower():
-            parts = line.split()
-            for part in parts:
-                if any(char.isdigit() for char in part):
-                    suggestions['bill_number'] = part
-                    break
-    
-    # Try to find date
+    """Extract bill information from OCR text with improved accuracy"""
     import re
-    date_pattern = r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'
-    for line in lines:
-        match = re.search(date_pattern, line)
+    from datetime import datetime
+    
+    suggestions = {
+        'bill_number': None,
+        'bill_date': None,
+        'items': [],
+        'subtotal': None,
+        'tax': None,
+        'total': None,
+        'vendor_name': None
+    }
+    
+    if not ocr_text or not ocr_text.strip():
+        return suggestions
+    
+    # Clean and split text into lines
+    lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
+    full_text = ' '.join(lines).lower()
+    
+    # Extract Bill/Invoice Number - More comprehensive patterns
+    # Look for patterns like "ORD-2023-78912" or "Bill Number: ORD-2023-78912"
+    bill_patterns = [
+        r'(?:bill|invoice|inv)[\s]*(?:number|no)[\s#:]*([A-Z0-9\-/]+)',  # "Bill Number: ORD-2023-78912"
+        r'(?:bill|invoice|inv)[\s#:]+([A-Z0-9\-/]+)',  # "Bill: ORD-2023-78912"
+        r'#\s*([A-Z0-9\-/]+)',  # "#ORD-2023-78912"
+        r'no[.:\s]+([A-Z0-9\-/]+)',  # "No. ORD-2023-78912"
+        r'([A-Z]{2,}[-/]\d{4}[-/]\d{3,})',  # Pattern like ORD-2023-78912
+        r'([A-Z]{2,}\d{4,})',  # Pattern like ABC1234
+        r'(\d{4,}[-/][A-Z0-9]+)',  # Pattern like 2023-ORD789
+    ]
+    
+    for line in lines[:20]:  # Check first 20 lines
+        # Skip lines that are form labels
+        if any(keyword in line.lower() for keyword in ['bill type', 'payment', 'create proxy', 'items', 'subtotal', 'tax']):
+            continue
+            
+        for pattern in bill_patterns:
+            match = re.search(pattern, line, re.IGNORECASE)
+            if match:
+                bill_num = match.group(1).strip()
+                # Validate it looks like a bill number (has alphanumeric and is not just "Number")
+                if (len(bill_num) >= 5 and 
+                    re.search(r'[A-Z]', bill_num) and 
+                    re.search(r'[0-9]', bill_num) and
+                    bill_num.lower() != 'number'):
+                    suggestions['bill_number'] = bill_num
+                    break
+        if suggestions['bill_number']:
+            break
+    
+    # Extract Date - More comprehensive date patterns
+    # Prioritize YYYY-MM-DD format first (most common in bills)
+    date_patterns = [
+        (r'\d{4}[/-]\d{1,2}[/-]\d{1,2}', ['%Y-%m-%d', '%Y/%m/%d']),  # 2023-10-27 or 2023/10/27
+        (r'(?:bill|invoice)[\s]*(?:date|dated)[\s:]*(\d{4}[/-]\d{1,2}[/-]\d{1,2})', ['%Y-%m-%d', '%Y/%m/%d']),  # "Bill Date: 2023-10-27"
+        (r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%m/%d/%Y', '%m-%d-%Y']),
+        (r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4}', ['%d %b %Y', '%d %B %Y', '%d %b %y']),
+        (r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{2,4}', ['%b %d, %Y', '%B %d, %Y', '%b %d %Y']),
+    ]
+    
+    for line in lines[:25]:  # Check first 25 lines
+        # Skip lines that are form labels
+        if any(keyword in line.lower() for keyword in ['bill type', 'payment', 'create proxy', 'items']):
+            continue
+            
+        for pattern, formats in date_patterns:
+            match = re.search(pattern, line, re.IGNORECASE)
+            if match:
+                date_str = match.group(1) if len(match.groups()) > 0 else match.group(0)
+                date_str = date_str.strip()
+                # Try to parse with different formats
+                for fmt in formats:
+                    try:
+                        parsed_date = datetime.strptime(date_str, fmt)
+                        # Validate year is reasonable (not in future, not too old)
+                        if 2000 <= parsed_date.year <= 2100:
+                            suggestions['bill_date'] = parsed_date.strftime('%Y-%m-%d')
+                            break
+                    except:
+                        continue
+                if suggestions['bill_date']:
+                    break
+        if suggestions['bill_date']:
+            break
+    
+    # Extract Amounts - Improved pattern matching
+    # Look for amounts with currency symbols (₹, $, S, etc.) and labels
+    # Handle "S" as currency symbol (might be "$" in OCR)
+    amount_patterns = {
+        'total': [
+            r'(?:grand\s*)?total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+            r'total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+            r'total\s*amount[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+            r'amount\s*payable[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+        ],
+        'subtotal': [
+            r'sub\s*total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+            r'total\s*before\s*tax[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+        ],
+        'tax': [
+            r'(?:gst|tax|vat)[\s(]*\d+%[):\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "Tax (18%): S15.75"
+            r'(?:gst|tax|vat)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+            r'tax\s*amount[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+        ]
+    }
+    
+    # Search from bottom up for totals (usually at end of bill)
+    for line in reversed(lines):
+        line_clean = line.strip()
+        line_lower = line_clean.lower()
+        
+        # Skip empty lines or form labels
+        if not line_clean or any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy']):
+            continue
+            
+        for amount_type, patterns in amount_patterns.items():
+            if not suggestions.get(amount_type):
+                for pattern in patterns:
+                    match = re.search(pattern, line_lower, re.IGNORECASE)
         if match:
-            suggestions['bill_date'] = match.group()
+                        amount_str = match.group(1)
+                        # Clean amount: remove commas, keep decimal point
+                        amount = amount_str.replace(',', '')
+                        # Validate it's a reasonable amount
+                        try:
+                            amount_float = float(amount)
+                            if amount_float > 0:
+                                suggestions[amount_type] = amount
+                                break
+                        except:
+                            pass
+    
+    # Extract Items - More robust item extraction
+    # Look for table-like structures with items
+    item_started = False
+    item_headers_found = False
+    
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
+        
+        # Detect item table header
+        if any(keyword in line_lower for keyword in ['description', 'item', 'particular', 'product']):
+            if any(keyword in line_lower for keyword in ['qty', 'quantity', 'rate', 'price', 'amount']):
+                item_headers_found = True
+                item_started = True
+                continue
+        
+        # Skip if we haven't found item section yet
+        if not item_started and i < len(lines) * 0.3:  # Items usually in middle section
+            continue
+        
+        # Stop if we hit totals section
+        if any(keyword in line_lower for keyword in ['total', 'subtotal', 'grand total', 'amount payable']):
+            if item_started:
+                break
+        
+        # Extract item data - Handle formats like:
+        # "1 Wireless Keyboard S45.00 S45.00"
+        # "2. USB-C Cable - S12.50 S12.50"
+        # "3. Desk Lamp S30.00 S30.00"
+        
+        # Skip if line starts with common non-item keywords
+        if any(line_lower.startswith(keyword) for keyword in ['subtotal', 'tax', 'total', 'items', 'description']):
+            continue
+        
+        # Try to match item pattern: number + description + numbers (with optional currency)
+        # Pattern: optional number/dot, description text, then 1-3 price amounts
+        item_match = re.match(r'^\d+[.\s]*(.+?)(?:\s+[₹$S-]?\s*\d+(?:[.,]\d{2})?)+\s*$', line, re.IGNORECASE)
+        if not item_match:
+            # Try splitting on spaces/tabs
+            parts = re.split(r'\s{2,}|\t', line)
+            if len(parts) < 2:
+                parts = line.split()
+        else:
+            parts = line.split()
+        
+        # Extract numbers with currency symbols (₹, $, S)
+        numbers = []
+        text_parts = []
+        seen_dash = False
+        
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            
+            # Skip item numbers (1, 2., etc.)
+            if re.match(r'^\d+\.?$', part):
+                continue
+            
+            # Check if it's a dash (for missing quantity)
+            if part == '-':
+                seen_dash = True
+                numbers.append('1')  # Default quantity to 1
+                continue
+            
+            # Check if it's a number with currency symbol
+            num_match = re.search(r'[₹$S]?\s*(\d+(?:[.,]\d{2})?)', part)
+            if num_match:
+                num = num_match.group(1).replace(',', '')
+                try:
+                    float(num)
+                    numbers.append(num)
+                except:
+                    text_parts.append(part)
+            else:
+                text_parts.append(part)
+        
+        # If we have description and at least 1 number (price), it's likely an item
+        if len(text_parts) > 0 and len(numbers) >= 1:
+            description = ' '.join(text_parts).strip()
+            
+            # Remove leading numbers/dots from description
+            description = re.sub(r'^\d+[.\s]+', '', description)
+            
+            # Filter out common non-item lines
+            if (len(description) > 2 and 
+                not any(keyword in description.lower() for keyword in 
+                    ['total', 'subtotal', 'tax', 'gst', 'discount', 'bill', 'invoice', 'date', 'page', 'items'])):
+                
+                # Determine quantity and price
+                # If we have 2+ numbers: first might be qty, second is price
+                # If we have 1 number: it's likely the price, qty defaults to 1
+                if len(numbers) >= 2:
+                    # First number might be quantity if it's small (< 1000), otherwise it's a price
+                    first_num = float(numbers[0])
+                    if first_num < 1000 and first_num > 0:
+                        qty = str(first_num)
+                        price = numbers[1]
+                    else:
+                        qty = '1'
+                        price = numbers[0]
+                elif len(numbers) == 1:
+                    qty = '1'
+                    price = numbers[0]
+                else:
+                    continue
+                
+                # Validate numbers are reasonable
+                try:
+                    qty_float = float(qty)
+                    price_float = float(price)
+                    if qty_float > 0 and price_float > 0:
+                        suggestions['items'].append({
+                            'description': description,
+                            'quantity': str(qty_float),
+                            'unit_price': str(price_float)
+                        })
+                except:
+                    pass
+        
+        # Limit items
+        if len(suggestions['items']) >= 50:
+            break
+    
+    # Extract Vendor Name - Usually at the top, but skip form labels
+    if lines:
+        # First few non-empty lines are often vendor info
+        skip_keywords = ['bill', 'invoice', 'date', 'page', 'gst', 'number', 'normal', 'handbill', 
+                        'yes', 'no', 'payment', 'status', 'items', 'subtotal', 'tax', 'total',
+                        'create proxy', 'fully paid', 'unpaid', 'partially paid']
+        
+        for line in lines[:10]:
+            line_clean = line.strip()
+            line_lower = line_clean.lower()
+            
+            # Skip if it looks like a number, date, form label, or common header
+            if (len(line_clean) > 3 and len(line_clean) < 100 and 
+                not re.match(r'^[\d\s\-/:]+$', line_clean) and
+                not any(keyword in line_lower for keyword in skip_keywords) and
+                not re.match(r'^[A-Z0-9\-/]+$', line_clean) and  # Skip bill numbers
+                not re.search(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', line_clean)):  # Skip dates
+                suggestions['vendor_name'] = line_clean
             break
     
     return suggestions
