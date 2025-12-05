@@ -362,7 +362,6 @@ def create():
         
         # Handle payment - create credit entry if paid or partially paid
         if form.payment_type.data in ['FULL', 'PARTIAL']:
-            from models import CreditEntry
             payment_amount = bill.amount_total if form.payment_type.data == 'FULL' else (form.partial_amount.data or Decimal('0.00'))
             
             if payment_amount > 0:
@@ -909,7 +908,6 @@ def mark_paid(id):
         return redirect(url_for('bill.detail', id=bill.id))
     
     # Create credit entry
-    from models import CreditEntry
     credit = CreditEntry(
         tenant_id=tenant.id,
         bill_id=bill.id,
