@@ -23,12 +23,27 @@
                         {% endif %}
                     </div>
                     <div class="mb-4">
-                        {{ form.image.label(class="form-label") }}
-                        {{ form.image(class="form-control", accept="image/*,.pdf", id="imageInput") }}
+                        <label class="form-label">Upload Bill Image</label>
+                        <div class="file-upload-form">
+                            <label for="imageInput" class="file-upload-label" id="fileUploadLabel">
+                                <div class="file-upload-design">
+                                    <svg viewBox="0 0 640 512" height="1em">
+                                        <path
+                                            d="M144 480C64.5 480 0 415.5 0 336c0-62.8 40.2-116.2 96.2-135.9c-.1-2.7-.2-5.4-.2-8.1c0-88.4 71.6-160 160-160c59.3 0 111 32.2 138.7 80.2C409.9 102 428.3 96 448 96c53 0 96 43 96 96c0 12.2-2.3 23.8-6.4 34.6C596 238.4 640 290.1 640 352c0 70.7-57.3 128-128 128H144zm79-217c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l39-39V392c0 13.3 10.7 24 24 24s24-10.7 24-24V257.9l39 39c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-80-80c-9.4-9.4-24.6-9.4-33.9 0l-80 80z"
+                                        ></path>
+                                    </svg>
+                                    <p>Drag and Drop</p>
+                                    <p>or</p>
+                                    <span class="browse-button">Browse file</span>
+                                    <p id="fileName" style="margin-top: 15px; font-size: 0.875rem; display: none;"></p>
+                                </div>
+                                {{ form.image(accept="image/*,.pdf", id="imageInput", style="display: none;") }}
+                            </label>
+                        </div>
                         {% if form.image.errors %}
                             <div class="text-danger small mt-1">{{ form.image.errors[0] }}</div>
                         {% endif %}
-                        <small class="form-text text-muted">Supported formats: JPG, PNG, PDF</small>
+                        <small class="form-text text-muted d-block mt-2 text-center">Supported formats: JPG, PNG, PDF</small>
                     </div>
                     
                     <!-- Loading indicator -->
@@ -92,44 +107,85 @@ document.addEventListener('DOMContentLoaded', function() {
     const imagePreview = document.getElementById('imagePreview');
     const noImagePlaceholder = document.getElementById('noImagePlaceholder');
     const imageInfo = document.getElementById('imageInfo');
+    const fileUploadLabel = document.getElementById('fileUploadLabel');
+    const fileName = document.getElementById('fileName');
     
-    // Image preview functionality
+    // Drag and drop functionality
+    fileUploadLabel.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        fileUploadLabel.classList.add('drag-over');
+    });
+    
+    fileUploadLabel.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        fileUploadLabel.classList.remove('drag-over');
+    });
+    
+    fileUploadLabel.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        fileUploadLabel.classList.remove('drag-over');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            imageInput.files = files;
+            handleFileSelect(files[0]);
+        }
+    });
+    
+    // File input change handler
     imageInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
-            // Check if it's an image (not PDF)
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    previewImage.src = e.target.result;
-                    imagePreview.classList.remove('d-none');
-                    noImagePlaceholder.classList.add('d-none');
-                    
-                    // Show image info
-                    const fileSize = (file.size / 1024).toFixed(2);
-                    imageInfo.textContent = `File: ${file.name} (${fileSize} KB)`;
-                };
-                reader.readAsDataURL(file);
-            } else if (file.type === 'application/pdf') {
-                // For PDF, show a placeholder
-                imagePreview.classList.remove('d-none');
-                noImagePlaceholder.classList.add('d-none');
-                previewImage.src = '';
-                previewImage.style.display = 'none';
-                imageInfo.innerHTML = `
-                    <div class="alert alert-info mb-0">
-                        <i class="bi bi-file-pdf me-2"></i>
-                        <strong>PDF File:</strong> ${file.name}<br>
-                        <small>PDF preview not available. OCR will process the file.</small>
-                    </div>
-                `;
-            }
+            handleFileSelect(file);
         } else {
-            // No file selected
-            imagePreview.classList.add('d-none');
-            noImagePlaceholder.classList.remove('d-none');
+            resetFileDisplay();
         }
     });
+    
+    // Handle file selection
+    function handleFileSelect(file) {
+        // Update file name display
+        fileName.textContent = file.name;
+        fileName.style.display = 'block';
+        
+        // Check if it's an image (not PDF)
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImage.src = e.target.result;
+                imagePreview.classList.remove('d-none');
+                noImagePlaceholder.classList.add('d-none');
+                
+                // Show image info
+                const fileSize = (file.size / 1024).toFixed(2);
+                imageInfo.textContent = `File: ${file.name} (${fileSize} KB)`;
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type === 'application/pdf') {
+            // For PDF, show a placeholder
+            imagePreview.classList.remove('d-none');
+            noImagePlaceholder.classList.add('d-none');
+            previewImage.src = '';
+            previewImage.style.display = 'none';
+            imageInfo.innerHTML = `
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-file-pdf me-2"></i>
+                    <strong>PDF File:</strong> ${file.name}<br>
+                    <small>PDF preview not available. OCR will process the file.</small>
+                </div>
+            `;
+        }
+    }
+    
+    function resetFileDisplay() {
+        fileName.textContent = '';
+        fileName.style.display = 'none';
+        imagePreview.classList.add('d-none');
+        noImagePlaceholder.classList.remove('d-none');
+    }
     
     // Form submission
     form.addEventListener('submit', function(e) {

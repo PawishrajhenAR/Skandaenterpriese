@@ -100,6 +100,12 @@ class Bill(db.Model):
     is_authorized = db.Column(db.Boolean, default=False)  # Admin authorization required
     authorized_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     authorized_at = db.Column(db.DateTime, nullable=True)
+    # OCR extracted fields
+    delivery_date = db.Column(db.Date, nullable=True)
+    billed_to_name = db.Column(db.String(200), nullable=True)
+    shipped_to_name = db.Column(db.String(200), nullable=True)
+    delivery_recipient = db.Column(db.String(200), nullable=True)  # DR field
+    post = db.Column(db.String(100), nullable=True)
     
     items = db.relationship('BillItem', backref='bill', lazy=True, cascade='all, delete-orphan')
     proxy_bills = db.relationship('ProxyBill', backref='parent_bill', lazy=True)

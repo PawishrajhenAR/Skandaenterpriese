@@ -238,43 +238,110 @@ def list():
 
 @bill_bp.route('/new/ocr-upload', methods=['POST'])
 @login_required
+@permission_required('create_bill')
 def ocr_upload():
-    """Handle OCR image upload and return extracted text"""
-    if 'ocr_image' not in request.files:
-        return jsonify({'success': False, 'error': 'No file provided'}), 400
-    
-    file = request.files['ocr_image']
-    if not file or not file.filename:
-        return jsonify({'success': False, 'error': 'No file selected'}), 400
-    
-    # Check file extension
-    allowed_extensions = {'png', 'jpg', 'jpeg', 'pdf'}
-    if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
-        return jsonify({'success': False, 'error': 'Invalid file type. Please upload JPG, PNG, or PDF.'}), 400
-    
+    """Handle OCR image upload and return extracted text with advanced processing"""
     try:
-        filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"ocr_{timestamp}_{filename}"
+        # Check if file is provided
+        if 'ocr_image' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
         
-        upload_folder = Path(current_app.config['UPLOAD_FOLDER'])
-        upload_folder.mkdir(parents=True, exist_ok=True)
-        filepath = upload_folder / filename
-        file.save(str(filepath))
+        file = request.files['ocr_image']
+        if not file or not file.filename:
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
         
-        # Run OCR with error handling
+        # Check file extension
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'pdf'}
+        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        if file_ext not in allowed_extensions:
+            return jsonify({'success': False, 'error': 'Invalid file type. Please upload JPG, PNG, or PDF.'}), 400
+        
+        # Save file
         try:
-            ocr_text = run_ocr(str(filepath))
+            filename = secure_filename(file.filename)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"ocr_{timestamp}_{filename}"
             
-            # Check if OCR returned an error message
-            if ocr_text.startswith("OCR error:") or ocr_text.startswith("Error:") or "not installed" in ocr_text.lower():
+            upload_folder = Path(current_app.config['UPLOAD_FOLDER'])
+            upload_folder.mkdir(parents=True, exist_ok=True)
+            filepath = upload_folder / filename
+            file.save(str(filepath))
+        except Exception as save_error:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to save file: {str(save_error)}'
+            }), 500
+        
+        # Run advanced OCR with detailed results
+        try:
+            # Check if OCR utils is available
+            try:
+                ocr_result = run_ocr(str(filepath), return_detailed=True)
+            except NameError:
                 return jsonify({
                     'success': False,
-                    'error': ocr_text
+                    'error': 'OCR module not properly imported. Please check server logs.'
                 }), 500
             
-            # Try to extract basic info from OCR text
-            suggestions = extract_bill_info(ocr_text)
+            # Check if OCR returned an error message (string)
+            if isinstance(ocr_result, str):
+                if (ocr_result.startswith("OCR error:") or 
+                    ocr_result.startswith("Error:") or 
+                    "not installed" in ocr_result.lower() or
+                    "failed" in ocr_result.lower()):
+                    return jsonify({
+                        'success': False,
+                        'error': ocr_result
+                    }), 500
+                # Fallback: treat as simple text extraction
+                ocr_text = ocr_result
+                ocr_detailed = None
+            elif isinstance(ocr_result, dict):
+                # Use detailed results
+                ocr_text = ocr_result.get('text', '')
+                ocr_detailed = ocr_result.get('detailed', [])
+                
+                # Validate that we got some text
+                if not ocr_text or not ocr_text.strip():
+                    return jsonify({
+                        'success': False,
+                        'error': 'No text could be extracted from the image. Please ensure the image is clear and contains readable text.'
+                    }), 500
+            else:
+                # Unexpected return type
+                current_app.logger.warning(f"Unexpected OCR result type: {type(ocr_result)}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Unexpected OCR result format. Please try again.'
+                }), 500
+            
+            # Extract information using advanced extraction with bounding box context
+            try:
+                suggestions = extract_bill_info_advanced(ocr_text, ocr_detailed)
+                # Log extraction results for debugging
+                current_app.logger.info(f"OCR Extraction Results: {suggestions}")
+            except Exception as extract_error:
+                current_app.logger.error(f"Advanced extraction failed: {str(extract_error)}")
+                # If advanced extraction fails, try basic extraction
+                try:
+                    suggestions = extract_bill_info(ocr_text)
+                    current_app.logger.info(f"Basic extraction results: {suggestions}")
+                except Exception as basic_error:
+                    current_app.logger.error(f"Basic extraction also failed: {str(basic_error)}")
+                    suggestions = {
+                        'bill_number': None,
+                        'bill_date': None,
+                        'delivery_date': None,
+                        'subtotal': None,
+                        'tax': None,
+                        'total': None,
+                        'total_net': None,
+                        'vendor_name': None,
+                        'billed_to_name': None,
+                        'shipped_to_name': None,
+                        'delivery_recipient': None,
+                        'post': None
+                    }
             
             return jsonify({
                 'success': True,
@@ -282,14 +349,29 @@ def ocr_upload():
                 'image_path': f"uploads/bills/{filename}",
                 'suggestions': suggestions
             })
+            
+        except ImportError as import_error:
+            return jsonify({
+                'success': False,
+                'error': f'OCR library not available: {str(import_error)}'
+            }), 500
         except Exception as ocr_error:
+            import traceback
+            error_trace = traceback.format_exc()
+            current_app.logger.error(f"OCR processing error: {error_trace}")
             return jsonify({
                 'success': False,
                 'error': f'OCR processing failed: {str(ocr_error)}'
             }), 500
             
     except Exception as e:
-        return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
+        import traceback
+        error_trace = traceback.format_exc()
+        current_app.logger.error(f"OCR upload error: {error_trace}")
+        return jsonify({
+            'success': False,
+            'error': f'Upload failed: {str(e)}'
+        }), 500
 
 
 @bill_bp.route('/new', methods=['GET', 'POST'])
@@ -305,32 +387,10 @@ def create():
     form.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.filter_by(tenant_id=tenant.id).order_by(Vendor.name).all()]
     
     if form.validate_on_submit():
-        # Get items from request
-        items_data = request.form.getlist('items')
-        descriptions = request.form.getlist('item_description[]')
-        quantities = request.form.getlist('item_quantity[]')
-        unit_prices = request.form.getlist('item_unit_price[]')
-        
-        # Calculate amounts
-        subtotal = Decimal('0.00')
-        items = []
-        
-        for i in range(len(descriptions)):
-            if descriptions[i].strip():
-                qty = Decimal(quantities[i] or '0')
-                price = Decimal(unit_prices[i] or '0')
-                amount = qty * price
-                subtotal += amount
-                items.append({
-                    'description': descriptions[i],
-                    'quantity': qty,
-                    'unit_price': price,
-                    'amount': amount
-                })
-        
-        # Calculate tax (assuming 18% GST)
-        tax = subtotal * Decimal('0.18')
-        total = subtotal + tax
+        # Get amounts directly from form
+        subtotal = Decimal(request.form.get('amount_subtotal', '0.00') or '0.00')
+        tax = Decimal(request.form.get('amount_tax', '0.00') or '0.00')
+        total = Decimal(request.form.get('amount_total', '0.00') or '0.00')
         
         bill = Bill(
             tenant_id=tenant.id,
@@ -341,22 +401,14 @@ def create():
             status='DRAFT',
             amount_subtotal=subtotal,
             amount_tax=tax,
-            amount_total=total
+            amount_total=total,
+            delivery_date=form.delivery_date.data if form.delivery_date.data else None,
+            billed_to_name=form.billed_to_name.data if form.billed_to_name.data else None,
+            shipped_to_name=form.shipped_to_name.data if form.shipped_to_name.data else None,
+            delivery_recipient=form.delivery_recipient.data if form.delivery_recipient.data else None,
+            post=form.post.data if form.post.data else None
         )
         db.session.add(bill)
-        db.session.flush()
-        
-        # Add items
-        for item_data in items:
-            item = BillItem(
-                bill_id=bill.id,
-                description=item_data['description'],
-                quantity=item_data['quantity'],
-                unit_price=item_data['unit_price'],
-                amount=item_data['amount']
-            )
-            db.session.add(item)
-        
         db.session.commit()
         log_action(current_user, 'CREATE_BILL', 'BILL', bill.id)
         
@@ -406,11 +458,16 @@ def extract_bill_info(ocr_text):
     suggestions = {
         'bill_number': None,
         'bill_date': None,
-        'items': [],
+        'delivery_date': None,
         'subtotal': None,
         'tax': None,
         'total': None,
-        'vendor_name': None
+        'total_net': None,
+        'vendor_name': None,
+        'billed_to_name': None,
+        'shipped_to_name': None,
+        'delivery_recipient': None,
+        'post': None
     }
     
     if not ocr_text or not ocr_text.strip():
@@ -420,87 +477,135 @@ def extract_bill_info(ocr_text):
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
     full_text = ' '.join(lines).lower()
     
-    # Extract Bill/Invoice Number - More comprehensive patterns
-    # Look for patterns like "ORD-2023-78912" or "Bill Number: ORD-2023-78912"
-    bill_patterns = [
-        r'(?:bill|invoice|inv)[\s]*(?:number|no)[\s#:]*([A-Z0-9\-/]+)',  # "Bill Number: ORD-2023-78912"
-        r'(?:bill|invoice|inv)[\s#:]+([A-Z0-9\-/]+)',  # "Bill: ORD-2023-78912"
-        r'#\s*([A-Z0-9\-/]+)',  # "#ORD-2023-78912"
-        r'no[.:\s]+([A-Z0-9\-/]+)',  # "No. ORD-2023-78912"
+    # Extract Invoice Number - Focus on "Invoice" instead of "Bill"
+    # Look for patterns like "1/25-26/014013" or "Invoice No: 1/25-26/014013"
+    invoice_patterns = [
+        r'invoice\s+no[.:\s]+([A-Z0-9\-/]+)',  # "Invoice No. 1/25-26/014014"
+        r'(?:invoice|inv)[\s]*(?:number|no|#)[\s#:]*([A-Z0-9\-/]+)',  # "Invoice Number: 1/25-26/014013"
+        r'(?:invoice|inv)[\s#:]+([A-Z0-9\-/]+)',  # "Invoice: 1/25-26/014013"
+        r'inv[.\s]*no[.:\s]+([A-Z0-9\-/]+)',  # "Inv No. 1/25-26/014013"
+        r'doc[.\s]*no[.:\s]+([A-Z0-9\-/]+)',  # "Doc No: MM/25-26/014013"
+        r'#\s*([A-Z0-9\-/]+)',  # "#1/25-26/014013"
+        r'no[.:\s]+([A-Z0-9\-/]+)',  # "No. 1/25-26/014013"
+        r'([A-Z0-9]{1,}[/-]\d{2,}[/-]\d{2,}[/-]\d{3,})',  # Pattern like 1/25-26/014013
         r'([A-Z]{2,}[-/]\d{4}[-/]\d{3,})',  # Pattern like ORD-2023-78912
         r'([A-Z]{2,}\d{4,})',  # Pattern like ABC1234
         r'(\d{4,}[-/][A-Z0-9]+)',  # Pattern like 2023-ORD789
     ]
     
-    for line in lines[:20]:  # Check first 20 lines
-        # Skip lines that are form labels
-        if any(keyword in line.lower() for keyword in ['bill type', 'payment', 'create proxy', 'items', 'subtotal', 'tax']):
-            continue
-            
-        for pattern in bill_patterns:
-            match = re.search(pattern, line, re.IGNORECASE)
-            if match:
-                bill_num = match.group(1).strip()
-                # Validate it looks like a bill number (has alphanumeric and is not just "Number")
-                if (len(bill_num) >= 5 and 
-                    re.search(r'[A-Z]', bill_num) and 
-                    re.search(r'[0-9]', bill_num) and
-                    bill_num.lower() != 'number'):
-                    suggestions['bill_number'] = bill_num
-                    break
-        if suggestions['bill_number']:
-            break
+    # Check both individual lines and combined text
+    full_text_lower = full_text.lower()
+    for pattern in invoice_patterns:
+        match = re.search(pattern, full_text_lower, re.IGNORECASE)
+        if match:
+            invoice_num = match.group(1).strip()
+            # Clean up - remove common suffixes
+            invoice_num = re.sub(r'\s*(?:gst|phone|email|address|pincode|pin|state|city|page|date|invoice).*$', '', invoice_num, flags=re.IGNORECASE)
+            invoice_num = invoice_num.strip()
+            # Validate it looks like an invoice number
+            if (len(invoice_num) >= 3 and len(invoice_num) < 100 and
+                invoice_num.lower() != 'number' and
+                invoice_num.lower() != 'no' and
+                '/' in invoice_num):  # Invoice numbers usually have slashes
+                suggestions['bill_number'] = invoice_num  # Store as bill_number in DB
+                break
+    
+    # Also check line by line if not found
+    if not suggestions['bill_number']:
+        for line in lines[:30]:
+            # Skip lines that are form labels
+            if any(keyword in line.lower() for keyword in ['bill type', 'payment', 'create proxy', 'items', 'subtotal', 'tax']):
+                continue
+                
+            for pattern in invoice_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    invoice_num = match.group(1).strip()
+                    invoice_num = re.sub(r'\s*(?:gst|phone|email|address|pincode|pin|state|city|page|date).*$', '', invoice_num, flags=re.IGNORECASE)
+                    invoice_num = invoice_num.strip()
+                    if (len(invoice_num) >= 3 and len(invoice_num) < 100 and
+                        invoice_num.lower() != 'number' and
+                        invoice_num.lower() != 'no'):
+                        suggestions['bill_number'] = invoice_num
+                        break
+            if suggestions['bill_number']:
+                break
     
     # Extract Date - More comprehensive date patterns
-    # Prioritize YYYY-MM-DD format first (most common in bills)
+    # Handle DD/MM/YYYY format (common in Indian invoices)
     date_patterns = [
-        (r'\d{4}[/-]\d{1,2}[/-]\d{1,2}', ['%Y-%m-%d', '%Y/%m/%d']),  # 2023-10-27 or 2023/10/27
-        (r'(?:bill|invoice)[\s]*(?:date|dated)[\s:]*(\d{4}[/-]\d{1,2}[/-]\d{1,2})', ['%Y-%m-%d', '%Y/%m/%d']),  # "Bill Date: 2023-10-27"
-        (r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%m/%d/%Y', '%m-%d-%Y']),
+        (r'invoice\s+date[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y']),  # "Invoice Date: 04/12/2025"
+        (r'(?:bill|invoice)[\s]*(?:date|dated)[\s:]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y']),
+        (r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', ['%d/%m/%Y', '%d-%m-%Y']),  # DD/MM/YYYY format
+        (r'\d{4}[/-]\d{1,2}[/-]\d{1,2}', ['%Y-%m-%d', '%Y/%m/%d']),  # YYYY-MM-DD format
+        (r'\d{1,2}[/-]\d{1,2}[/-]\d{2}', ['%d/%m/%y', '%d-%m-%y']),  # DD/MM/YY format
         (r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4}', ['%d %b %Y', '%d %B %Y', '%d %b %y']),
-        (r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{2,4}', ['%b %d, %Y', '%B %d, %Y', '%b %d %Y']),
     ]
     
-    for line in lines[:25]:  # Check first 25 lines
-        # Skip lines that are form labels
-        if any(keyword in line.lower() for keyword in ['bill type', 'payment', 'create proxy', 'items']):
-            continue
-            
-        for pattern, formats in date_patterns:
-            match = re.search(pattern, line, re.IGNORECASE)
-            if match:
-                date_str = match.group(1) if len(match.groups()) > 0 else match.group(0)
-                date_str = date_str.strip()
-                # Try to parse with different formats
-                for fmt in formats:
-                    try:
-                        parsed_date = datetime.strptime(date_str, fmt)
-                        # Validate year is reasonable (not in future, not too old)
-                        if 2000 <= parsed_date.year <= 2100:
-                            suggestions['bill_date'] = parsed_date.strftime('%Y-%m-%d')
-                            break
-                    except:
-                        continue
-                if suggestions['bill_date']:
-                    break
-        if suggestions['bill_date']:
-            break
+    # Check full text first for "Invoice Date:" pattern
+    for pattern, formats in date_patterns:
+        match = re.search(pattern, full_text, re.IGNORECASE)
+        if match:
+            date_str = match.group(1) if len(match.groups()) > 0 else match.group(0)
+            date_str = date_str.strip()
+            for fmt in formats:
+                try:
+                    parsed_date = datetime.strptime(date_str, fmt)
+                    if 2000 <= parsed_date.year <= 2100:
+                        suggestions['bill_date'] = parsed_date.strftime('%Y-%m-%d')
+                        break
+                except:
+                    continue
+            if suggestions['bill_date']:
+                break
+    
+    # Also check line by line if not found
+    if not suggestions['bill_date']:
+        for line in lines[:30]:
+            if any(keyword in line.lower() for keyword in ['bill type', 'payment', 'create proxy', 'items']):
+                continue
+                
+            for pattern, formats in date_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    date_str = match.group(1) if len(match.groups()) > 0 else match.group(0)
+                    date_str = date_str.strip()
+                    for fmt in formats:
+                        try:
+                            parsed_date = datetime.strptime(date_str, fmt)
+                            if 2000 <= parsed_date.year <= 2100:
+                                suggestions['bill_date'] = parsed_date.strftime('%Y-%m-%d')
+                                break
+                        except:
+                            continue
+                    if suggestions['bill_date']:
+                        break
+            if suggestions['bill_date']:
+                break
     
     # Extract Amounts - Improved pattern matching
     # Look for amounts with currency symbols (₹, $, S, etc.) and labels
     # Handle "S" as currency symbol (might be "$" in OCR)
     amount_patterns = {
         'total': [
+            r'(?:net\s+amt\s+payable|net\s+amount\s+payable|amount\s+payable)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "NNet Amt Payable 815.00"
             r'(?:grand\s*)?total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
             r'total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
             r'total\s*amount[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
-            r'amount\s*payable[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+        ],
+        'total_net': [
+            r'(?:nnet\s+amt\s+payable|net\s+amt\s+payable|net\s+amount\s+payable)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "NNet Amt Payable 815.00"
+            r'net\s+amt[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "Net Amt: 815.00"
+            r'(?:net|net\s+amount)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+            r'total\s+net[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
         ],
         'subtotal': [
+            r'(?:taxable\s+value|taxable\s+amt)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "Taxable Value" from invoice
             r'sub\s*total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
             r'total\s*before\s*tax[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
         ],
         'tax': [
+            r'total\s+tax\s+amt[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "Total Tax Amt: 38.80"
             r'(?:gst|tax|vat)[\s(]*\d+%[):\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "Tax (18%): S15.75"
             r'(?:gst|tax|vat)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
             r'tax\s*amount[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
@@ -520,7 +625,7 @@ def extract_bill_info(ocr_text):
             if not suggestions.get(amount_type):
                 for pattern in patterns:
                     match = re.search(pattern, line_lower, re.IGNORECASE)
-        if match:
+                    if match:
                         amount_str = match.group(1)
                         # Clean amount: remove commas, keep decimal point
                         amount = amount_str.replace(',', '')
@@ -532,129 +637,6 @@ def extract_bill_info(ocr_text):
                                 break
                         except:
                             pass
-    
-    # Extract Items - More robust item extraction
-    # Look for table-like structures with items
-    item_started = False
-    item_headers_found = False
-    
-    for i, line in enumerate(lines):
-        line_lower = line.lower()
-        
-        # Detect item table header
-        if any(keyword in line_lower for keyword in ['description', 'item', 'particular', 'product']):
-            if any(keyword in line_lower for keyword in ['qty', 'quantity', 'rate', 'price', 'amount']):
-                item_headers_found = True
-                item_started = True
-                continue
-        
-        # Skip if we haven't found item section yet
-        if not item_started and i < len(lines) * 0.3:  # Items usually in middle section
-            continue
-        
-        # Stop if we hit totals section
-        if any(keyword in line_lower for keyword in ['total', 'subtotal', 'grand total', 'amount payable']):
-            if item_started:
-                break
-        
-        # Extract item data - Handle formats like:
-        # "1 Wireless Keyboard S45.00 S45.00"
-        # "2. USB-C Cable - S12.50 S12.50"
-        # "3. Desk Lamp S30.00 S30.00"
-        
-        # Skip if line starts with common non-item keywords
-        if any(line_lower.startswith(keyword) for keyword in ['subtotal', 'tax', 'total', 'items', 'description']):
-            continue
-        
-        # Try to match item pattern: number + description + numbers (with optional currency)
-        # Pattern: optional number/dot, description text, then 1-3 price amounts
-        item_match = re.match(r'^\d+[.\s]*(.+?)(?:\s+[₹$S-]?\s*\d+(?:[.,]\d{2})?)+\s*$', line, re.IGNORECASE)
-        if not item_match:
-            # Try splitting on spaces/tabs
-            parts = re.split(r'\s{2,}|\t', line)
-            if len(parts) < 2:
-                parts = line.split()
-        else:
-            parts = line.split()
-        
-        # Extract numbers with currency symbols (₹, $, S)
-        numbers = []
-        text_parts = []
-        seen_dash = False
-        
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-            
-            # Skip item numbers (1, 2., etc.)
-            if re.match(r'^\d+\.?$', part):
-                continue
-            
-            # Check if it's a dash (for missing quantity)
-            if part == '-':
-                seen_dash = True
-                numbers.append('1')  # Default quantity to 1
-                continue
-            
-            # Check if it's a number with currency symbol
-            num_match = re.search(r'[₹$S]?\s*(\d+(?:[.,]\d{2})?)', part)
-            if num_match:
-                num = num_match.group(1).replace(',', '')
-                try:
-                    float(num)
-                    numbers.append(num)
-                except:
-                    text_parts.append(part)
-            else:
-                text_parts.append(part)
-        
-        # If we have description and at least 1 number (price), it's likely an item
-        if len(text_parts) > 0 and len(numbers) >= 1:
-            description = ' '.join(text_parts).strip()
-            
-            # Remove leading numbers/dots from description
-            description = re.sub(r'^\d+[.\s]+', '', description)
-            
-            # Filter out common non-item lines
-            if (len(description) > 2 and 
-                not any(keyword in description.lower() for keyword in 
-                    ['total', 'subtotal', 'tax', 'gst', 'discount', 'bill', 'invoice', 'date', 'page', 'items'])):
-                
-                # Determine quantity and price
-                # If we have 2+ numbers: first might be qty, second is price
-                # If we have 1 number: it's likely the price, qty defaults to 1
-                if len(numbers) >= 2:
-                    # First number might be quantity if it's small (< 1000), otherwise it's a price
-                    first_num = float(numbers[0])
-                    if first_num < 1000 and first_num > 0:
-                        qty = str(first_num)
-                        price = numbers[1]
-                    else:
-                        qty = '1'
-                        price = numbers[0]
-                elif len(numbers) == 1:
-                    qty = '1'
-                    price = numbers[0]
-                else:
-                    continue
-                
-                # Validate numbers are reasonable
-                try:
-                    qty_float = float(qty)
-                    price_float = float(price)
-                    if qty_float > 0 and price_float > 0:
-                        suggestions['items'].append({
-                            'description': description,
-                            'quantity': str(qty_float),
-                            'unit_price': str(price_float)
-                        })
-                except:
-                    pass
-        
-        # Limit items
-        if len(suggestions['items']) >= 50:
-            break
     
     # Extract Vendor Name - Usually at the top, but skip form labels
     if lines:
@@ -675,6 +657,603 @@ def extract_bill_info(ocr_text):
                 not re.search(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', line_clean)):  # Skip dates
                 suggestions['vendor_name'] = line_clean
             break
+    
+    # Extract Delivery Date - Look for delivery date patterns
+    delivery_date_patterns = [
+        (r'(?:delivery|delivered|ship|shipped)[\s]*(?:date|on|dt)[\s:]*(\d{4}[/-]\d{1,2}[/-]\d{1,2})', ['%Y-%m-%d', '%Y/%m/%d']),
+        (r'(?:delivery|delivered|ship|shipped)[\s]*(?:date|on|dt)[\s:]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%m/%d/%Y', '%m-%d-%Y']),
+        (r'(?:delivery|delivered|ship|shipped)[\s]*(?:date|on|dt)[\s:]*(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4})', ['%d %b %Y', '%d %B %Y', '%d %b %y']),
+    ]
+    
+    for line in lines[:30]:
+        line_lower = line.lower()
+        if any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy', 'items']):
+            continue
+        
+        for pattern, formats in delivery_date_patterns:
+            match = re.search(pattern, line_lower, re.IGNORECASE)
+            if match:
+                date_str = match.group(1).strip()
+                for fmt in formats:
+                    try:
+                        parsed_date = datetime.strptime(date_str, fmt)
+                        if 2000 <= parsed_date.year <= 2100:
+                            suggestions['delivery_date'] = parsed_date.strftime('%Y-%m-%d')
+                            break
+                    except:
+                        continue
+                if suggestions['delivery_date']:
+                    break
+        if suggestions['delivery_date']:
+            break
+    
+    # Extract Total Net Amount - Look for "NNet Amt Payable" or "Net Amt Payable" patterns
+    net_amount_patterns = [
+        r'(?:nnet\s+amt\s+payable|net\s+amt\s+payable|net\s+amount\s+payable)[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "NNet Amt Payable 815.00"
+        r'net\s+amt[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',  # "Net Amt: 815.00"
+        r'(?:net|net\s+amount|amount\s+net)[\s:]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+        r'total\s+net[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+        r'net\s+total[:\s]*[₹$S]?\s*(\d+(?:[.,]\d{2})?)',
+    ]
+    
+    # Check full text first for "NNet Amt Payable" pattern
+    for pattern in net_amount_patterns:
+        match = re.search(pattern, full_text, re.IGNORECASE)
+        if match:
+            amount_str = match.group(1).replace(',', '')
+            try:
+                amount_float = float(amount_str)
+                if amount_float > 0:
+                    suggestions['total_net'] = amount_str
+                    break
+            except:
+                pass
+    
+    # Also check line by line from bottom up (totals are usually at bottom)
+    if not suggestions['total_net']:
+        for line in reversed(lines):
+            line_lower = line.lower().strip()
+            if not line_lower or any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy']):
+                continue
+            
+            for pattern in net_amount_patterns:
+                match = re.search(pattern, line_lower, re.IGNORECASE)
+                if match:
+                    amount_str = match.group(1).replace(',', '')
+                    try:
+                        amount_float = float(amount_str)
+                        if amount_float > 0:
+                            suggestions['total_net'] = amount_str
+                            break
+                    except:
+                        pass
+            if suggestions['total_net']:
+                break
+    
+    # Extract Billed To Name - Look for "billed to", "bill to", "customer", etc.
+    billed_to_patterns = [
+        r'(?:billed\s+to|bill\s+to|customer|cust\.|buyer|purchaser)[\s:]+(.+?)(?:\n|$)',
+        r'(?:billed\s+to|bill\s+to|customer|cust\.)[\s:]+(.+?)(?:\n|delivery|ship|address|gst|phone|email|$)',
+    ]
+    
+    for i, line in enumerate(lines[:40]):
+        line_lower = line.lower()
+        if any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy', 'items', 'total', 'subtotal']):
+            continue
+        
+        for pattern in billed_to_patterns:
+            match = re.search(pattern, line_lower, re.IGNORECASE)
+            if match:
+                name = match.group(1).strip()
+                # Clean up the name - remove common suffixes
+                name = re.sub(r'\s*(?:gst|phone|email|address|pincode|pin|state|city).*$', '', name, flags=re.IGNORECASE)
+                name = name.strip()
+                if len(name) > 2 and len(name) < 200:
+                    suggestions['billed_to_name'] = name
+                    break
+        
+        # Also check next line if current line has the label
+        if 'billed to' in line_lower or 'bill to' in line_lower or 'customer' in line_lower:
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if len(next_line) > 2 and len(next_line) < 200:
+                    # Check if it's not a date, number, or address pattern
+                    if not re.match(r'^[\d\s\-/:]+$', next_line) and not re.search(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', next_line):
+                        suggestions['billed_to_name'] = next_line
+                        break
+        
+        if suggestions['billed_to_name']:
+            break
+    
+    # Extract Shipped To Name - Look for "shipped to", "ship to", "delivery to", etc.
+    shipped_to_patterns = [
+        r'shipped\s+to[:\s]+(.+?)(?:\n|cust\s+code|address|gst|phone|email|$)',
+        r'(?:shipped\s+to|ship\s+to|delivery\s+to|deliver\s+to|consignee|recipient)[\s:]+(.+?)(?:\n|$)',
+    ]
+    
+    # Check full text first
+    for pattern in shipped_to_patterns:
+        match = re.search(pattern, full_text, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            name = re.sub(r'\s*(?:cust\s*code|address|gst|phone|email|pincode|pin|state|city).*$', '', name, flags=re.IGNORECASE)
+            name = name.strip()
+            if len(name) > 2 and len(name) < 200 and not re.match(r'^[\d\s\-/:]+$', name):
+                suggestions['shipped_to_name'] = name
+                break
+    
+    # Also check line by line
+    if not suggestions['shipped_to_name']:
+        for i, line in enumerate(lines[:40]):
+            line_lower = line.lower()
+            if any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy', 'items', 'total', 'subtotal']):
+                continue
+            
+            for pattern in shipped_to_patterns:
+                match = re.search(pattern, line_lower, re.IGNORECASE)
+                if match:
+                    name = match.group(1).strip()
+                    name = re.sub(r'\s*(?:gst|phone|email|address|pincode|pin|state|city).*$', '', name, flags=re.IGNORECASE)
+                    name = name.strip()
+                    if len(name) > 2 and len(name) < 200:
+                        suggestions['shipped_to_name'] = name
+                        break
+            
+            # Check next line if current line has the label
+            if any(keyword in line_lower for keyword in ['shipped to', 'ship to', 'delivery to', 'deliver to', 'consignee']):
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    if (len(next_line) > 2 and len(next_line) < 200 and
+                        not re.match(r'^[\d\s\-/:]+$', next_line) and
+                        not re.search(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', next_line) and
+                        'cust code' not in next_line.lower()):
+                        suggestions['shipped_to_name'] = next_line
+                        break
+            
+            if suggestions['shipped_to_name']:
+                break
+    
+    # Extract DR (Delivery Recipient) - Look for "DR", "Delivery Recipient", etc.
+    # Handle various formats: DR:, D.R., D R, dr:, etc.
+    dr_patterns = [
+        r'(?:^|\s)(?:d\.?\s*r\.?|dr)[:\s]+([A-Za-z][A-Za-z\s]{1,50})(?:\n|$|contact|phone|mobile|dr)',
+        r'(?:d\.?\s*r\.?|dr)[:\s]+([A-Za-z][A-Za-z\s]{1,50})(?:\s|$|contact|phone)',
+        r'(?:d\.?\s*r\.?|dr)[:\s]+([A-Za-z\s]{2,50})(?:\n|$|contact|phone|mobile|dr)',
+        r'delivery\s+recipient[:\s]+([A-Za-z\s]{2,50})(?:\n|$|contact|phone|mobile)',
+        r'delivery\s+rec[:\s]+([A-Za-z\s]{2,50})(?:\n|$|contact|phone|mobile)',
+        r'(?:d\.?\s*r\.?|dr)\s+contact[:\s]+([A-Za-z\s]{2,50})(?:\n|$|phone|mobile)',
+        r'recipient[:\s]+([A-Za-z\s]{2,50})(?:\n|$|contact|phone|mobile)',  # Just "Recipient:"
+    ]
+    
+    # Check full text first - look for "DR" followed by name
+    for pattern in dr_patterns:
+        match = re.search(pattern, full_text, re.IGNORECASE)
+        if match:
+            dr_name = match.group(1).strip()
+            # Remove "DR" if it's still in the name
+            dr_name = re.sub(r'^(?:dr|dr\s*:)\s*', '', dr_name, flags=re.IGNORECASE).strip()
+            dr_name = re.sub(r'\s*(?:contact|phone|mobile|email|address|dr\s+contact).*$', '', dr_name, flags=re.IGNORECASE)
+            dr_name = dr_name.strip()
+            if len(dr_name) > 2 and len(dr_name) < 200:
+                suggestions['delivery_recipient'] = dr_name
+                break
+    
+    # Also check line by line - look for "DR" on one line and name on next
+    if not suggestions['delivery_recipient']:
+        for i, line in enumerate(lines[:50]):
+            line_lower = line.lower().strip()
+            if any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy', 'items', 'total', 'subtotal']):
+                continue
+            
+            # Check if line contains just "DR" or "DR:" (handle D.R., D R, etc.)
+            if re.match(r'^(?:d\.?\s*r\.?|dr)\s*:?\s*$', line, re.IGNORECASE):
+                # Next line should be the name
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    if (len(next_line) > 2 and len(next_line) < 200 and
+                        not re.match(r'^[\d\s\-/:]+$', next_line) and
+                        not re.search(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', next_line) and
+                        re.search(r'[A-Za-z]', next_line) and
+                        'contact' not in next_line.lower()):
+                        suggestions['delivery_recipient'] = next_line
+                        break
+            
+            # Check if line contains "DR:" followed by name on same line (handle D.R., D R, etc.)
+            dr_same_line = re.search(r'(?:^|\s)(?:d\.?\s*r\.?|dr)[:\s]+([A-Za-z][A-Za-z\s]{1,50})(?:\s|$|contact|phone)', line, re.IGNORECASE)
+            if dr_same_line:
+                dr_name = dr_same_line.group(1).strip()
+                dr_name = re.sub(r'\s*(?:contact|phone|mobile|email).*$', '', dr_name, flags=re.IGNORECASE).strip()
+                if len(dr_name) > 2 and len(dr_name) < 200:
+                    suggestions['delivery_recipient'] = dr_name
+                    break
+            
+            # Also check for "DR Contact:" pattern (handle D.R., D R, etc.)
+            dr_contact = re.search(r'(?:d\.?\s*r\.?|dr)\s+contact[:\s]+([A-Za-z\s]{2,50})(?:\s|$|phone|mobile)', line, re.IGNORECASE)
+            if dr_contact:
+                dr_name = dr_contact.group(1).strip()
+                dr_name = re.sub(r'\s*(?:phone|mobile|email).*$', '', dr_name, flags=re.IGNORECASE).strip()
+                if len(dr_name) > 2 and len(dr_name) < 200:
+                    suggestions['delivery_recipient'] = dr_name
+                    break
+            
+            # Also check with patterns - more flexible matching
+            for pattern in dr_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    dr_name = match.group(1).strip()
+                    dr_name = re.sub(r'^(?:(?:d\.?\s*r\.?|dr)\s*:?)\s*', '', dr_name, flags=re.IGNORECASE).strip()
+                    dr_name = re.sub(r'\s*(?:contact|phone|mobile|email|address).*$', '', dr_name, flags=re.IGNORECASE)
+                    dr_name = dr_name.strip()
+                    # More flexible validation - allow any text that looks like a name
+                    if len(dr_name) > 2 and len(dr_name) < 200 and re.search(r'[A-Za-z]{2,}', dr_name):
+                        suggestions['delivery_recipient'] = dr_name
+                        break
+            
+            # Check if current line has a name and previous line has "DR" (reverse pattern)
+            if not suggestions['delivery_recipient'] and i > 0:
+                prev_line = lines[i - 1].strip() if i > 0 else ''
+                if re.search(r'^(?:d\.?\s*r\.?|dr)\s*:?\s*$', prev_line, re.IGNORECASE):
+                    # Previous line was "DR:", current line might be the name
+                    if (len(line.strip()) > 2 and len(line.strip()) < 200 and
+                        not re.match(r'^[\d\s\-/:]+$', line.strip()) and
+                        re.search(r'[A-Za-z]{2,}', line.strip()) and
+                        'contact' not in line.lower()):
+                        suggestions['delivery_recipient'] = line.strip()
+                        break
+            
+            if suggestions['delivery_recipient']:
+                break
+    
+    # Extract Post - Look for "post", "post office", "postal", etc.
+    post_patterns = [
+        r'(?:post|post\s+office|postal)[\s:]+([A-Za-z\s]{2,50})(?:\n|$|,|pincode|pin)',
+        r'post[:\s]+([A-Za-z\s]{2,50})(?:\n|$|,|pincode|pin|state|district)',
+        r'post\s+office[:\s]+([A-Za-z\s]{2,50})(?:\n|$|,|pincode|pin)',
+    ]
+    
+    for i, line in enumerate(lines[:50]):
+        line_lower = line.lower()
+        if any(keyword in line_lower for keyword in ['bill type', 'payment', 'create proxy', 'items', 'total', 'subtotal']):
+            continue
+        
+        for pattern in post_patterns:
+            match = re.search(pattern, line_lower, re.IGNORECASE)
+            if match:
+                post = match.group(1).strip()
+                # Clean up - remove common suffixes
+                post = re.sub(r'\s*(?:pincode|pin|state|district|city|taluk).*$', '', post, flags=re.IGNORECASE)
+                post = post.strip()
+                if len(post) > 2 and len(post) < 100:
+                    suggestions['post'] = post
+                    break
+        
+        # Also check next line if current line has "post"
+        if 'post' in line_lower and ('office' in line_lower or 'postal' in line_lower):
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if len(next_line) > 2 and len(next_line) < 100:
+                    # Check if it looks like a post name (mostly letters, not numbers/dates)
+                    if re.match(r'^[A-Za-z\s]+$', next_line):
+                        suggestions['post'] = next_line
+                        break
+        
+        if suggestions['post']:
+            break
+    
+    return suggestions
+
+
+def extract_bill_info_advanced(ocr_text, ocr_detailed=None):
+    """
+    Advanced bill information extraction with context awareness and bounding box analysis.
+    Uses detailed OCR results with bounding boxes for better field detection.
+    """
+    import re
+    from datetime import datetime
+    from difflib import SequenceMatcher
+    
+    def similarity(a, b):
+        """Calculate similarity ratio between two strings"""
+        return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    
+    def find_text_near_label(label_patterns, ocr_detailed, max_distance=200):
+        """Find text near a label using bounding box positions"""
+        if not ocr_detailed:
+            return None
+        
+        for item in ocr_detailed:
+            text = item['text'].lower()
+            for pattern in label_patterns:
+                if re.search(pattern, text, re.IGNORECASE):
+                    # Found label, look for value nearby
+                    label_y = item['center_y']
+                    label_x = item['center_x']
+                    
+                    # Find closest text block to the right or below
+                    best_match = None
+                    min_distance = float('inf')
+                    
+                    for candidate in ocr_detailed:
+                        if candidate == item:
+                            continue
+                        
+                        # Calculate distance
+                        dist_x = abs(candidate['left'] - item['left'])
+                        dist_y = abs(candidate['top'] - item['top'])
+                        distance = (dist_x ** 2 + dist_y ** 2) ** 0.5
+                        
+                        # Prefer items to the right or slightly below
+                        if (candidate['left'] > label_x or 
+                            (candidate['top'] > label_y and dist_x < 100)):
+                            if distance < min_distance and distance < max_distance:
+                                min_distance = distance
+                                best_match = candidate['text']
+                    
+                    if best_match:
+                        return best_match.strip()
+        return None
+    
+    def clean_text(text):
+        """Clean and normalize extracted text"""
+        if not text:
+            return None
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        # Remove common OCR artifacts
+        text = re.sub(r'[^\w\s\-/.,:()₹$]', '', text)
+        return text.strip() if text.strip() else None
+    
+    def extract_amount_from_text(text):
+        """Extract numeric amount from text, handling various formats"""
+        if not text:
+            return None
+        
+        # Remove currency symbols and extract numbers
+        amount_patterns = [
+            r'(\d{1,3}(?:[.,]\d{2,3})*(?:[.,]\d{2})?)',  # Standard number format
+            r'[₹$]?\s*(\d+(?:[.,]\d{2})?)',  # With currency symbol
+        ]
+        
+        for pattern in amount_patterns:
+            matches = re.findall(pattern, text.replace(',', ''))
+            if matches:
+                try:
+                    # Get the largest number (likely the amount)
+                    amounts = [float(m.replace(',', '')) for m in matches]
+                    return str(max(amounts))
+                except:
+                    continue
+        return None
+    
+    # Initialize suggestions
+    suggestions = {
+        'bill_number': None,  # Will store invoice number
+        'bill_date': None,
+        'delivery_date': None,
+        'subtotal': None,
+        'tax': None,
+        'total': None,
+        'total_net': None,
+        'vendor_name': None,
+        'billed_to_name': None,
+        'shipped_to_name': None,
+        'delivery_recipient': None,  # DR field
+        'post': None
+    }
+    
+    if not ocr_text or not ocr_text.strip():
+        return suggestions
+    
+    # Clean and split text into lines
+    lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
+    full_text = ' '.join(lines).lower()
+    
+    # Use bounding box information if available for better extraction
+    if ocr_detailed:
+        # Sort by position (top to bottom, left to right)
+        sorted_items = sorted(ocr_detailed, key=lambda x: (x['top'], x['left']))
+        
+        # Extract Invoice Number using bounding box context (look for "Invoice" not "Bill")
+        invoice_number_patterns = [
+            r'(?:invoice|inv)[\s]*(?:number|no|#)[\s#:]',
+            r'(?:invoice|inv)[\s#:]',
+            r'doc[.\s]*(?:number|no|#)[\s#:]',  # Doc No pattern
+        ]
+        invoice_num = find_text_near_label(invoice_number_patterns, sorted_items, max_distance=150)
+        if invoice_num:
+            # Clean and validate invoice number
+            invoice_num = clean_text(invoice_num)
+            if invoice_num and len(invoice_num) >= 3:
+                suggestions['bill_number'] = invoice_num  # Store as bill_number in DB
+        
+        # Extract DR (Delivery Recipient) using context
+        dr_patterns = [
+            r'^(?:d\.?\s*r\.?|dr)[:\s]',  # Match "DR:" or "D.R.:" at start
+            r'(?:^|\s)(?:d\.?\s*r\.?|dr)[:\s]',  # Match "DR:" with optional space
+            r'(?:d\.?\s*r\.?|dr)\s+contact[:\s]',  # Match "DR Contact:" or "D.R. Contact:"
+            r'delivery\s+recipient[:\s]',
+            r'delivery\s+rec[:\s]',
+        ]
+        dr_name = find_text_near_label(dr_patterns, sorted_items, max_distance=200)
+        if dr_name:
+            dr_name = clean_text(dr_name)
+            # Remove "DR" if it's still in the name (handle D.R., D R, etc.)
+            dr_name = re.sub(r'^(?:d\.?\s*r\.?|dr)\s*:?\s*', '', dr_name, flags=re.IGNORECASE).strip()
+            # Remove "DR Contact" if present
+            dr_name = re.sub(r'^(?:(?:d\.?\s*r\.?|dr)\s+contact|(?:d\.?\s*r\.?|dr)\s*contact\s*:)\s*', '', dr_name, flags=re.IGNORECASE).strip()
+            # Remove contact info if present
+            dr_name = re.sub(r'\s*(?:contact|phone|mobile|email|dr\s+contact).*$', '', dr_name, flags=re.IGNORECASE).strip()
+            if dr_name and len(dr_name) > 2:
+                suggestions['delivery_recipient'] = dr_name
+        
+        # Extract Billed To using context
+        billed_to_patterns = [
+            r'(?:billed\s+to|bill\s+to|customer|cust\.)',
+        ]
+        billed_to = find_text_near_label(billed_to_patterns, sorted_items, max_distance=200)
+        if billed_to:
+            billed_to = clean_text(billed_to)
+            if billed_to and len(billed_to) > 2:
+                suggestions['billed_to_name'] = billed_to
+        
+        # Extract Shipped To using context
+        shipped_to_patterns = [
+            r'(?:shipped\s+to|ship\s+to|delivery\s+to|deliver\s+to|consignee)',
+        ]
+        shipped_to = find_text_near_label(shipped_to_patterns, sorted_items, max_distance=200)
+        if shipped_to:
+            shipped_to = clean_text(shipped_to)
+            if shipped_to and len(shipped_to) > 2:
+                suggestions['shipped_to_name'] = shipped_to
+        
+        # Extract Post using context
+        post_patterns = [
+            r'(?:post|post\s+office|postal)',
+        ]
+        post = find_text_near_label(post_patterns, sorted_items, max_distance=150)
+        if post:
+            post = clean_text(post)
+            if post and len(post) > 2:
+                suggestions['post'] = post
+        
+        # Extract amounts using context (look for labels in bottom section)
+        # Sort by Y position (bottom items are usually totals)
+        bottom_items = sorted(sorted_items, key=lambda x: x['top'], reverse=True)[:30]
+        
+        for item in bottom_items:
+            text_lower = item['text'].lower()
+            
+            # Total Net Amount - prioritize "net amt payable" or "net amount payable"
+            if not suggestions['total_net']:
+                # Check for "NNet Amt Payable" or "Net Amt Payable" patterns
+                if re.search(r'(?:nnet|net)\s+amt\s+payable', text_lower):
+                    amount = extract_amount_from_text(item['text'])
+                    if amount:
+                        suggestions['total_net'] = amount
+                        continue  # Found it, move on
+                elif any(keyword in text_lower for keyword in ['net amt payable', 'net amount payable', 'nnet amt payable']):
+                    amount = extract_amount_from_text(item['text'])
+                    if amount:
+                        suggestions['total_net'] = amount
+                        continue  # Found it, move on
+            
+            # Total Amount
+            if not suggestions['total']:
+                if any(keyword in text_lower for keyword in ['total', 'grand total', 'amount payable']):
+                    if 'net' not in text_lower and 'amt payable' not in text_lower:  # Avoid net total
+                        amount = extract_amount_from_text(item['text'])
+                        if amount:
+                            suggestions['total'] = amount
+            
+            # Subtotal
+            if not suggestions['subtotal']:
+                if any(keyword in text_lower for keyword in ['subtotal', 'sub total', 'total before', 'taxable value']):
+                    amount = extract_amount_from_text(item['text'])
+                    if amount:
+                        suggestions['subtotal'] = amount
+            
+            # Tax
+            if not suggestions['tax']:
+                if any(keyword in text_lower for keyword in ['total tax amt', 'tax amt', 'tax amount', 'gst', 'vat']):
+                    amount = extract_amount_from_text(item['text'])
+                    if amount:
+                        suggestions['tax'] = amount
+    
+    # Fallback to original extraction method for fields not found via bounding boxes
+    # This ensures we still extract data even if bounding box method fails
+    try:
+        fallback_suggestions = extract_bill_info(ocr_text)
+        
+        # Merge results, preferring bounding box results but using fallback if needed
+        for key in suggestions:
+            if not suggestions[key] and fallback_suggestions.get(key):
+                suggestions[key] = fallback_suggestions[key]
+    except Exception as e:
+        # If fallback also fails, just use what we have
+        import logging
+        logging.warning(f"Fallback extraction failed: {str(e)}")
+    
+    # Enhanced validation and cleaning with intelligent understanding
+    if suggestions['bill_number']:
+        suggestions['bill_number'] = clean_text(suggestions['bill_number'])
+        # Remove common OCR errors in bill numbers
+        suggestions['bill_number'] = re.sub(r'[O0]', '0', suggestions['bill_number'])  # Fix O/0 confusion
+        suggestions['bill_number'] = re.sub(r'[Il1]', '1', suggestions['bill_number'])  # Fix I/l/1 confusion
+    
+    # Enhanced date extraction with better validation
+    if not suggestions['bill_date']:
+        # Try to find date near "date" or "dated" labels
+        date_patterns = [
+            (r'(?:bill|invoice)[\s]*(?:date|dated)[\s:]*(\d{4}[/-]\d{1,2}[/-]\d{1,2})', ['%Y-%m-%d', '%Y/%m/%d']),
+            (r'(?:date|dated)[\s:]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%m/%d/%Y', '%m-%d-%Y']),
+        ]
+        
+        for line in lines[:30]:
+            for pattern, formats in date_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    date_str = match.group(1).strip()
+                    for fmt in formats:
+                        try:
+                            parsed_date = datetime.strptime(date_str, fmt)
+                            if 2000 <= parsed_date.year <= 2100:
+                                suggestions['bill_date'] = parsed_date.strftime('%Y-%m-%d')
+                                break
+                        except:
+                            continue
+                    if suggestions['bill_date']:
+                        break
+            if suggestions['bill_date']:
+                break
+    
+    if suggestions['billed_to_name']:
+        suggestions['billed_to_name'] = clean_text(suggestions['billed_to_name'])
+        # Remove common suffixes and clean up
+        suggestions['billed_to_name'] = re.sub(r'\s*(?:pvt|ltd|limited|inc|corporation|corp|company).*$', '', 
+                                               suggestions['billed_to_name'], flags=re.IGNORECASE).strip()
+        # Remove address-like patterns
+        suggestions['billed_to_name'] = re.sub(r'\d+.*$', '', suggestions['billed_to_name']).strip()
+        # Capitalize properly
+        if suggestions['billed_to_name']:
+            suggestions['billed_to_name'] = ' '.join(word.capitalize() for word in suggestions['billed_to_name'].split())
+    
+    if suggestions['shipped_to_name']:
+        suggestions['shipped_to_name'] = clean_text(suggestions['shipped_to_name'])
+        suggestions['shipped_to_name'] = re.sub(r'\s*(?:pvt|ltd|limited|inc|corporation|corp|company).*$', '', 
+                                                suggestions['shipped_to_name'], flags=re.IGNORECASE).strip()
+        suggestions['shipped_to_name'] = re.sub(r'\d+.*$', '', suggestions['shipped_to_name']).strip()
+        if suggestions['shipped_to_name']:
+            suggestions['shipped_to_name'] = ' '.join(word.capitalize() for word in suggestions['shipped_to_name'].split())
+    
+    if suggestions['delivery_recipient']:
+        suggestions['delivery_recipient'] = clean_text(suggestions['delivery_recipient'])
+        # Remove contact info, phone numbers, etc.
+        suggestions['delivery_recipient'] = re.sub(r'\s*(?:contact|phone|mobile|email|address).*$', '', 
+                                                   suggestions['delivery_recipient'], flags=re.IGNORECASE).strip()
+        # Capitalize properly
+        if suggestions['delivery_recipient']:
+            suggestions['delivery_recipient'] = ' '.join(word.capitalize() for word in suggestions['delivery_recipient'].split())
+    
+    if suggestions['post']:
+        suggestions['post'] = clean_text(suggestions['post'])
+        # Capitalize post name properly
+        suggestions['post'] = suggestions['post'].title()
+        # Remove numbers and common suffixes
+        suggestions['post'] = re.sub(r'\d+', '', suggestions['post']).strip()
+        suggestions['post'] = re.sub(r'\s*(?:office|ofc).*$', '', suggestions['post'], flags=re.IGNORECASE).strip()
+    
+    # Validate and clean amounts
+    for amount_field in ['subtotal', 'tax', 'total', 'total_net']:
+        if suggestions[amount_field]:
+            try:
+                # Ensure it's a valid number
+                amount_val = float(suggestions[amount_field].replace(',', ''))
+                if amount_val < 0:
+                    suggestions[amount_field] = None
+                else:
+                    suggestions[amount_field] = str(amount_val)
+            except:
+                suggestions[amount_field] = None
     
     return suggestions
 

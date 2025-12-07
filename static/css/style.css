@@ -485,6 +485,115 @@ a:hover {
     border: none !important;
 }
 
+/* ============================================
+   File Upload Form - Drag and Drop Style
+   From Uiverse.io by Fundiman
+   ============================================ */
+.file-upload-form {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.file-upload-label input {
+    display: none;
+}
+
+.file-upload-label svg {
+    height: 60px;
+    fill: var(--slate-400);
+    margin-bottom: 20px;
+    transition: fill 0.3s ease;
+}
+
+.file-upload-label {
+    cursor: pointer;
+    background-color: var(--slate-50);
+    padding: 50px 40px;
+    border-radius: var(--radius-xl);
+    border: 2px dashed var(--slate-300);
+    box-shadow: var(--shadow-sm);
+    color: var(--slate-700);
+    transition: all 0.3s ease;
+    width: 100%;
+    max-width: 800px;
+    display: block;
+    text-align: center;
+}
+
+.file-upload-label:hover {
+    border-color: var(--primary-400);
+    background-color: var(--primary-50);
+    box-shadow: var(--shadow-md);
+}
+
+.file-upload-label:hover svg {
+    fill: var(--primary-500);
+}
+
+.file-upload-label.drag-over {
+    border-color: var(--primary-500);
+    background-color: var(--primary-50);
+    box-shadow: 0 0 0 4px var(--primary-100);
+    border-style: solid;
+}
+
+.file-upload-label.drag-over svg {
+    fill: var(--primary-600);
+}
+
+.file-upload-design {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.file-upload-design p {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--slate-600);
+    font-weight: 500;
+}
+
+.file-upload-design p:first-of-type {
+    font-size: 1.1rem;
+    color: var(--slate-700);
+    font-weight: 600;
+}
+
+.browse-button {
+    background-color: var(--primary-600);
+    padding: 8px 20px;
+    border-radius: var(--radius-md);
+    color: white;
+    transition: all 0.3s;
+    display: inline-block;
+    margin-top: 8px;
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.browse-button:hover {
+    background-color: var(--primary-700);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+#fileName {
+    color: var(--slate-500) !important;
+    font-weight: 500;
+}
+
+#ocrFileName {
+    color: var(--slate-500) !important;
+    font-weight: 500;
+}
+
 .bg-secondary {
     background-color: #f1f5f9 !important;
     color: #475569;
@@ -707,4 +816,113 @@ a:hover {
     background-color: #d97706 !important; /* Darker orange - amber-600 */
     color: white !important;
     border: none !important;
+}
+
+/* ============================================
+   File Upload Form - Drag and Drop Style
+   From Uiverse.io by Fundiman
+   ============================================ */
+.file-upload-form {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.file-upload-label input {
+    display: none;
+}
+
+.file-upload-label svg {
+    height: 60px;
+    fill: var(--slate-400);
+    margin-bottom: 20px;
+    transition: fill 0.3s ease;
+}
+
+.file-upload-label {
+    cursor: pointer;
+    background-color: var(--slate-50);
+    padding: 50px 40px;
+    border-radius: var(--radius-xl);
+    border: 2px dashed var(--slate-300);
+    box-shadow: var(--shadow-sm);
+    color: var(--slate-700);
+    transition: all 0.3s ease;
+    width: 100%;
+    max-width: 800px;
+    display: block;
+    text-align: center;
+}
+
+.file-upload-label:hover {
+    border-color: var(--primary-400);
+    background-color: var(--primary-50);
+    box-shadow: var(--shadow-md);
+}
+
+.file-upload-label:hover svg {
+    fill: var(--primary-500);
+}
+
+.file-upload-label.drag-over {
+    border-color: var(--primary-500);
+    background-color: var(--primary-50);
+    box-shadow: 0 0 0 4px var(--primary-100);
+    border-style: solid;
+}
+
+.file-upload-label.drag-over svg {
+    fill: var(--primary-600);
+}
+
+.file-upload-design {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.file-upload-design p {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--slate-600);
+    font-weight: 500;
+}
+
+.file-upload-design p:first-of-type {
+    font-size: 1.1rem;
+    color: var(--slate-700);
+    font-weight: 600;
+}
+
+.browse-button {
+    background-color: var(--primary-600);
+    padding: 8px 20px;
+    border-radius: var(--radius-md);
+    color: white;
+    transition: all 0.3s;
+    display: inline-block;
+    margin-top: 8px;
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.browse-button:hover {
+    background-color: var(--primary-700);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+#fileName {
+    color: var(--slate-500) !important;
+    font-weight: 500;
+}
+
+#ocrFileName {
+    color: var(--slate-500) !important;
+    font-weight: 500;
 }

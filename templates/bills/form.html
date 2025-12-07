@@ -12,13 +12,37 @@
     </div>
     <div class="card-body p-4">
         <div class="mb-3">
-            <label for="ocr_image" class="form-label">Upload Bill Image for OCR</label>
-            <input type="file" class="form-control" id="ocr_image" accept="image/*,.pdf">
-            <small class="form-text text-muted">Upload an image to extract bill information automatically</small>
+            <label class="form-label">Upload Bill Image for OCR</label>
+            <div class="file-upload-form">
+                <label for="ocr_image" class="file-upload-label" id="ocrFileUploadLabel">
+                    <div class="file-upload-design">
+                        <svg viewBox="0 0 640 512" height="1em">
+                            <path
+                                d="M144 480C64.5 480 0 415.5 0 336c0-62.8 40.2-116.2 96.2-135.9c-.1-2.7-.2-5.4-.2-8.1c0-88.4 71.6-160 160-160c59.3 0 111 32.2 138.7 80.2C409.9 102 428.3 96 448 96c53 0 96 43 96 96c0 12.2-2.3 23.8-6.4 34.6C596 238.4 640 290.1 640 352c0 70.7-57.3 128-128 128H144zm79-217c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l39-39V392c0 13.3 10.7 24 24 24s24-10.7 24-24V257.9l39 39c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-80-80c-9.4-9.4-24.6-9.4-33.9 0l-80 80z"
+                            ></path>
+                        </svg>
+                        <p>Drag and Drop</p>
+                        <p>or</p>
+                        <span class="browse-button">Browse file</span>
+                        <p id="ocrFileName" style="margin-top: 15px; font-size: 0.875rem; display: none;"></p>
+                    </div>
+                    <input type="file" id="ocr_image" accept="image/*,.pdf" style="display: none;">
+                </label>
+            </div>
+            <small class="form-text text-muted d-block mt-2 text-center">Upload an image to extract bill information automatically</small>
+            <!-- Loading indicator -->
+            <div id="ocrLoading" class="alert alert-info d-none mt-3 mb-0">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div>
+                        <strong>Processing OCR...</strong>
+                        <div class="small">This may take 10-30 seconds. Please wait...</div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <button type="button" class="btn btn-primary" id="uploadOCR">
-            <i class="bi bi-upload me-2"></i>Upload & Extract
-        </button>
     </div>
 </div>
 
@@ -44,13 +68,13 @@
                 </div>
                 
                 <div class="row g-3">
-                    <div class="col-md-6">
+                    <div class="col-12">
                         <h6 class="text-primary mb-2"><i class="bi bi-card-text me-2"></i>Extracted Information:</h6>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered">
                                 <tbody>
                                     <tr>
-                                        <td class="fw-semibold" style="width: 40%;">Bill Number:</td>
+                                        <td class="fw-semibold" style="width: 40%;">Invoice Number:</td>
                                         <td id="previewBillNumber" class="text-muted">-</td>
                                     </tr>
                                     <tr>
@@ -73,14 +97,32 @@
                                         <td class="fw-semibold">Total:</td>
                                         <td id="previewTotal" class="fw-bold text-primary">-</td>
                                     </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Total Net:</td>
+                                        <td id="previewTotalNet" class="text-muted">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Billed To:</td>
+                                        <td id="previewBilledTo" class="text-muted">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Shipped To:</td>
+                                        <td id="previewShippedTo" class="text-muted">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Delivery Date:</td>
+                                        <td id="previewDeliveryDate" class="text-muted">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Delivery Recipient (DR):</td>
+                                        <td id="previewDeliveryRecipient" class="text-muted">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Post:</td>
+                                        <td id="previewPost" class="text-muted">-</td>
+                                    </tr>
                                 </tbody>
                             </table>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <h6 class="text-primary mb-2"><i class="bi bi-list-ul me-2"></i>Extracted Items:</h6>
-                        <div id="previewItems" class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto;">
-                            <p class="text-muted mb-0">No items extracted</p>
                         </div>
                     </div>
                 </div>
@@ -110,7 +152,7 @@
                     {% endif %}
                 </div>
                 <div class="col-md-3">
-                    {{ form.bill_number.label(class="form-label") }}
+                    <label for="bill_number" class="form-label">Invoice Number</label>
                     {{ form.bill_number(class="form-control") }}
                     {% if form.bill_number.errors %}
                         <div class="text-danger small">{{ form.bill_number.errors[0] }}</div>
@@ -121,6 +163,45 @@
                     {{ form.bill_date(class="form-control") }}
                     {% if form.bill_date.errors %}
                         <div class="text-danger small">{{ form.bill_date.errors[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3">
+                    {{ form.delivery_date.label(class="form-label") }}
+                    {{ form.delivery_date(class="form-control") }}
+                    {% if form.delivery_date.errors %}
+                        <div class="text-danger small">{{ form.delivery_date.errors[0] }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    {{ form.billed_to_name.label(class="form-label") }}
+                    {{ form.billed_to_name(class="form-control") }}
+                    {% if form.billed_to_name.errors %}
+                        <div class="text-danger small">{{ form.billed_to_name.errors[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4">
+                    {{ form.shipped_to_name.label(class="form-label") }}
+                    {{ form.shipped_to_name(class="form-control") }}
+                    {% if form.shipped_to_name.errors %}
+                        <div class="text-danger small">{{ form.shipped_to_name.errors[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4">
+                    {{ form.delivery_recipient.label(class="form-label") }}
+                    {{ form.delivery_recipient(class="form-control") }}
+                    {% if form.delivery_recipient.errors %}
+                        <div class="text-danger small">{{ form.delivery_recipient.errors[0] }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    {{ form.post.label(class="form-label") }}
+                    {{ form.post(class="form-control") }}
+                    {% if form.post.errors %}
+                        <div class="text-danger small">{{ form.post.errors[0] }}</div>
                     {% endif %}
                 </div>
             </div>
@@ -182,43 +263,19 @@
             </div>
             
             <hr>
-            <h5>Items</h5>
-            <div id="itemsContainer">
-                <div class="item-row mb-2">
-                    <div class="row g-2">
-                        <div class="col-md-5">
-                            <input type="text" name="item_description[]" class="form-control" placeholder="Description" required>
-                        </div>
-                        <div class="col-md-2">
-                            <input type="number" step="0.01" name="item_quantity[]" class="form-control qty" placeholder="Qty" required>
-                        </div>
-                        <div class="col-md-2">
-                            <input type="number" step="0.01" name="item_unit_price[]" class="form-control price" placeholder="Price" required>
-                        </div>
-                        <div class="col-md-2">
-                            <input type="text" name="item_amount[]" class="form-control amount" placeholder="Amount" readonly>
-                        </div>
-                        <div class="col-md-1">
-                            <button type="button" class="btn btn-danger btn-sm remove-item">Remove</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm mb-3" id="addItem">Add Item</button>
-            
-            <hr>
+            <h5>Amounts</h5>
             <div class="row mb-3">
                 <div class="col-md-4">
                     <label class="form-label">Subtotal</label>
-                    <input type="text" class="form-control" id="subtotal" value="0.00" readonly>
+                    <input type="number" step="0.01" name="amount_subtotal" class="form-control" id="subtotal" value="0.00" required>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Tax (18%)</label>
-                    <input type="text" class="form-control" id="tax" value="0.00" readonly>
+                    <input type="number" step="0.01" name="amount_tax" class="form-control" id="tax" value="0.00" required>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Total</label>
-                    <input type="text" class="form-control" id="total" value="0.00" readonly>
+                    <input type="number" step="0.01" name="amount_total" class="form-control" id="total" value="0.00" required>
                 </div>
             </div>
             
@@ -234,15 +291,113 @@
 {% block extra_scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const container = document.getElementById('itemsContainer');
-    const addBtn = document.getElementById('addItem');
     const isProxySelect = document.getElementById('is_proxy');
     const splitsContainer = document.getElementById('splitsContainer');
-    const uploadOCRBtn = document.getElementById('uploadOCR');
     const ocrImageInput = document.getElementById('ocr_image');
+    const ocrFileUploadLabel = document.getElementById('ocrFileUploadLabel');
+    const ocrFileName = document.getElementById('ocrFileName');
+    const ocrLoading = document.getElementById('ocrLoading');
     const ocrResult = document.getElementById('ocrResult');
     const ocrText = document.getElementById('ocrText');
-    const useOCRDataBtn = document.getElementById('useOCRData');
+    
+    // Store OCR data globally
+    let ocrData = null;
+    
+    // Function to process OCR automatically
+    function processOCR(file) {
+        if (!file) {
+            return;
+        }
+        
+        // Show file name
+        ocrFileName.textContent = file.name;
+        ocrFileName.style.display = 'block';
+        
+        // Show loading indicator
+        ocrLoading.classList.remove('d-none');
+        
+        const formData = new FormData();
+        formData.append('ocr_image', file);
+        
+        fetch('{{ url_for("bill.ocr_upload") }}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            // Check if response is ok
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.error || `Server error: ${response.status}`);
+                }).catch(() => {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                ocrData = data;
+                showOCRPreview(data);
+            } else {
+                alert('OCR processing failed: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('OCR Error Details:', error);
+            let errorMessage = 'Error processing OCR';
+            if (error.message) {
+                errorMessage += ': ' + error.message;
+            } else if (error instanceof TypeError && error.message.includes('fetch')) {
+                errorMessage = 'Failed to connect to server. Please check your connection and try again.';
+            } else {
+                errorMessage = 'An unexpected error occurred. Please try again.';
+            }
+            alert(errorMessage);
+        })
+        .finally(() => {
+            // Hide loading indicator
+            ocrLoading.classList.add('d-none');
+        });
+    }
+    
+    // Drag and drop functionality for OCR upload
+    ocrFileUploadLabel.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        ocrFileUploadLabel.classList.add('drag-over');
+    });
+    
+    ocrFileUploadLabel.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        ocrFileUploadLabel.classList.remove('drag-over');
+    });
+    
+    ocrFileUploadLabel.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        ocrFileUploadLabel.classList.remove('drag-over');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            ocrImageInput.files = files;
+            processOCR(files[0]);
+        }
+    });
+    
+    // Auto-process when file is selected via browse
+    ocrImageInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            processOCR(file);
+        } else {
+            ocrFileName.textContent = '';
+            ocrFileName.style.display = 'none';
+        }
+    });
     
     const paymentTypeSelect = document.getElementById('payment_type');
     const partialAmountContainer = document.getElementById('partialAmountContainer');
@@ -284,45 +439,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Store OCR data globally
-    let ocrData = null;
-    
-    // OCR Upload
-    uploadOCRBtn.addEventListener('click', function() {
-        const file = ocrImageInput.files[0];
-        if (!file) {
-            alert('Please select an image file');
-            return;
-        }
-        
-        const formData = new FormData();
-        formData.append('ocr_image', file);
-        
-        uploadOCRBtn.disabled = true;
-        uploadOCRBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
-        
-        fetch('{{ url_for("bill.ocr_upload") }}', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                ocrData = data;
-                showOCRPreview(data);
-            } else {
-                alert('OCR processing failed: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error processing OCR: ' + error.message);
-        })
-        .finally(() => {
-            uploadOCRBtn.disabled = false;
-            uploadOCRBtn.innerHTML = '<i class="bi bi-upload me-2"></i>Upload & Extract';
-        });
-    });
     
     // Show OCR Preview Modal
     function showOCRPreview(data) {
@@ -330,33 +446,31 @@ document.addEventListener('DOMContentLoaded', function() {
         const suggestions = data.suggestions || {};
         
         // Display extracted text
-        document.getElementById('ocrTextPreview').textContent = data.ocr_text || 'No text extracted';
-        
-        // Display extracted information
-        document.getElementById('previewBillNumber').textContent = suggestions.bill_number || '-';
-        document.getElementById('previewBillDate').textContent = suggestions.bill_date || '-';
-        document.getElementById('previewVendorName').textContent = suggestions.vendor_name || '-';
-        document.getElementById('previewSubtotal').textContent = suggestions.subtotal ? '₹' + suggestions.subtotal : '-';
-        document.getElementById('previewTax').textContent = suggestions.tax ? '₹' + suggestions.tax : '-';
-        document.getElementById('previewTotal').textContent = suggestions.total ? '₹' + suggestions.total : '-';
-        
-        // Display extracted items
-        const itemsContainer = document.getElementById('previewItems');
-        if (suggestions.items && suggestions.items.length > 0) {
-            let itemsHtml = '<table class="table table-sm table-bordered mb-0">';
-            itemsHtml += '<thead><tr><th>Description</th><th>Qty</th><th>Price</th></tr></thead><tbody>';
-            suggestions.items.forEach(item => {
-                itemsHtml += `<tr>
-                    <td>${item.description || '-'}</td>
-                    <td>${item.quantity || '-'}</td>
-                    <td>₹${item.unit_price || '-'}</td>
-                </tr>`;
-            });
-            itemsHtml += '</tbody></table>';
-            itemsContainer.innerHTML = itemsHtml;
-        } else {
-            itemsContainer.innerHTML = '<p class="text-muted mb-0">No items extracted</p>';
+        const ocrTextPreview = document.getElementById('ocrTextPreview');
+        if (ocrTextPreview) {
+            ocrTextPreview.textContent = data.ocr_text || 'No text extracted';
         }
+        
+        // Display extracted information - with null checks to prevent errors
+        const setTextContent = (id, value) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value || '-';
+            }
+        };
+        
+        setTextContent('previewBillNumber', suggestions.bill_number);
+        setTextContent('previewBillDate', suggestions.bill_date);
+        setTextContent('previewVendorName', suggestions.vendor_name);
+        setTextContent('previewSubtotal', suggestions.subtotal ? '₹' + suggestions.subtotal : null);
+        setTextContent('previewTax', suggestions.tax ? '₹' + suggestions.tax : null);
+        setTextContent('previewTotal', suggestions.total ? '₹' + suggestions.total : null);
+        setTextContent('previewTotalNet', suggestions.total_net ? '₹' + suggestions.total_net : null);
+        setTextContent('previewBilledTo', suggestions.billed_to_name);
+        setTextContent('previewShippedTo', suggestions.shipped_to_name);
+        setTextContent('previewDeliveryDate', suggestions.delivery_date);
+        setTextContent('previewDeliveryRecipient', suggestions.delivery_recipient);
+        setTextContent('previewPost', suggestions.post);
         
         // Show modal
         modal.show();
@@ -379,89 +493,71 @@ document.addEventListener('DOMContentLoaded', function() {
         // Use setTimeout to allow UI to update
         setTimeout(function() {
             const suggestions = ocrData.suggestions;
+            console.log('Auto-filling form with suggestions:', suggestions);
             
-            // Fill bill number
-            if (suggestions.bill_number) {
-                document.getElementById('bill_number').value = suggestions.bill_number;
-            }
+            // Helper function to safely set field value and trigger events
+            const setFieldValue = (fieldId, value) => {
+                const field = document.getElementById(fieldId);
+                if (field && value) {
+                    field.value = value;
+                    // Trigger input and change events to ensure form validation and calculations work
+                    field.dispatchEvent(new Event('input', { bubbles: true }));
+                    field.dispatchEvent(new Event('change', { bubbles: true }));
+                    console.log(`Set ${fieldId} to:`, value);
+                    return true;
+                } else {
+                    if (!field) {
+                        console.warn(`Field ${fieldId} not found in DOM`);
+                    } else if (!value) {
+                        console.log(`No value provided for ${fieldId}`);
+                    }
+                    return false;
+                }
+            };
+            
+            // Fill bill number (Invoice Number)
+            setFieldValue('bill_number', suggestions.bill_number);
             
             // Fill bill date
-            if (suggestions.bill_date) {
-                document.getElementById('bill_date').value = suggestions.bill_date;
-            }
+            setFieldValue('bill_date', suggestions.bill_date);
             
-            // Fill items
-            if (suggestions.items && suggestions.items.length > 0) {
-                // Clear existing items (except first one)
-                const itemsContainer = document.getElementById('itemsContainer');
-                const existingItems = itemsContainer.querySelectorAll('.item-row');
-                existingItems.forEach((item, index) => {
-                    if (index > 0) {
-                        item.remove();
-                    }
-                });
-                
-                // Fill first item
-                const firstItem = itemsContainer.querySelector('.item-row');
-                if (firstItem) {
-                    const descInput = firstItem.querySelector('input[name="item_description[]"]');
-                    const qtyInput = firstItem.querySelector('input[name="item_quantity[]"]');
-                    const priceInput = firstItem.querySelector('input[name="item_unit_price[]"]');
-                    
-                    if (suggestions.items[0]) {
-                        if (descInput) descInput.value = suggestions.items[0].description || '';
-                        if (qtyInput) qtyInput.value = suggestions.items[0].quantity || '';
-                        if (priceInput) priceInput.value = suggestions.items[0].unit_price || '';
-                    }
-                }
-                
-                // Add additional items
-                for (let i = 1; i < suggestions.items.length; i++) {
-                    // Create new item row
-                    const newRow = document.createElement('div');
-                    newRow.className = 'item-row mb-2';
-                    newRow.innerHTML = `
-                        <div class="row g-2">
-                            <div class="col-md-5">
-                                <input type="text" name="item_description[]" class="form-control" placeholder="Description" required>
-                            </div>
-                            <div class="col-md-2">
-                                <input type="number" step="0.01" name="item_quantity[]" class="form-control qty" placeholder="Qty" required>
-                            </div>
-                            <div class="col-md-2">
-                                <input type="number" step="0.01" name="item_unit_price[]" class="form-control price" placeholder="Price" required>
-                            </div>
-                            <div class="col-md-2">
-                                <input type="text" name="item_amount[]" class="form-control amount" placeholder="Amount" readonly>
-                            </div>
-                            <div class="col-md-1">
-                                <button type="button" class="btn btn-danger btn-sm remove-item">Remove</button>
-                            </div>
-                        </div>
-                    `;
-                    itemsContainer.appendChild(newRow);
-                    
-                    // Fill the new row with data
-                    if (suggestions.items[i]) {
-                        const descInput = newRow.querySelector('input[name="item_description[]"]');
-                        const qtyInput = newRow.querySelector('input[name="item_quantity[]"]');
-                        const priceInput = newRow.querySelector('input[name="item_unit_price[]"]');
-                        
-                        if (descInput) descInput.value = suggestions.items[i].description || '';
-                        if (qtyInput) qtyInput.value = suggestions.items[i].quantity || '';
-                        if (priceInput) priceInput.value = suggestions.items[i].unit_price || '';
-                    }
-                    
-                    // Attach event listeners to new row
-                    attachEventListeners(newRow);
-                }
-                
-                // Trigger calculation
-                calculateTotals();
+            // Fill delivery date
+            setFieldValue('delivery_date', suggestions.delivery_date);
+            
+            // Fill billed to name
+            setFieldValue('billed_to_name', suggestions.billed_to_name);
+            
+            // Fill shipped to name
+            setFieldValue('shipped_to_name', suggestions.shipped_to_name);
+            
+            // Fill delivery recipient (DR)
+            setFieldValue('delivery_recipient', suggestions.delivery_recipient);
+            
+            // Fill post
+            setFieldValue('post', suggestions.post);
+            
+            // Fill amounts from OCR if available
+            if (suggestions.subtotal) {
+                setFieldValue('subtotal', suggestions.subtotal);
+            }
+            if (suggestions.tax) {
+                setFieldValue('tax', suggestions.tax);
+            }
+            if (suggestions.total) {
+                setFieldValue('total', suggestions.total);
+            } else if (suggestions.total_net) {
+                // Use total_net as total if total is not available
+                setFieldValue('total', suggestions.total_net);
             }
             
             // Close modal
-            bootstrap.Modal.getInstance(document.getElementById('ocrPreviewModal')).hide();
+            const modalElement = document.getElementById('ocrPreviewModal');
+            if (modalElement) {
+                const modalInstance = bootstrap.Modal.getInstance(modalElement);
+                if (modalInstance) {
+                    modalInstance.hide();
+                }
+            }
             
             // Reset button
             confirmBtn.disabled = false;
@@ -472,77 +568,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 100);
     });
     
-    // Use OCR data button (for future enhancement - could parse and fill more fields)
-    useOCRDataBtn.addEventListener('click', function() {
-        alert('OCR data extracted. Please review and fill in the form manually based on the extracted text.');
-    });
-    
-    // Item management
-    addBtn.addEventListener('click', function() {
-        const newRow = document.createElement('div');
-        newRow.className = 'item-row mb-2';
-        newRow.innerHTML = `
-            <div class="row g-2">
-                <div class="col-md-5">
-                    <input type="text" name="item_description[]" class="form-control" placeholder="Description" required>
-                </div>
-                <div class="col-md-2">
-                    <input type="number" step="0.01" name="item_quantity[]" class="form-control qty" placeholder="Qty" required>
-                </div>
-                <div class="col-md-2">
-                    <input type="number" step="0.01" name="item_unit_price[]" class="form-control price" placeholder="Price" required>
-                </div>
-                <div class="col-md-2">
-                    <input type="text" name="item_amount[]" class="form-control amount" placeholder="Amount" readonly>
-                </div>
-                <div class="col-md-1">
-                    <button type="button" class="btn btn-danger btn-sm remove-item">Remove</button>
-                </div>
-            </div>
-        `;
-        container.appendChild(newRow);
-        attachEventListeners(newRow);
-    });
-    
-    container.addEventListener('click', function(e) {
-        if (e.target.classList.contains('remove-item')) {
-            if (container.children.length > 1) {
-                e.target.closest('.item-row').remove();
-                calculateTotals();
-            }
-        }
-    });
-    
-    function attachEventListeners(row) {
-        const qty = row.querySelector('.qty');
-        const price = row.querySelector('.price');
-        const amount = row.querySelector('.amount');
-        
-        [qty, price].forEach(input => {
-            input.addEventListener('input', function() {
-                const q = parseFloat(qty.value) || 0;
-                const p = parseFloat(price.value) || 0;
-                amount.value = (q * p).toFixed(2);
-                calculateTotals();
-            });
-        });
-    }
-    
-    function calculateTotals() {
-        let subtotal = 0;
-        document.querySelectorAll('.amount').forEach(amt => {
-            subtotal += parseFloat(amt.value) || 0;
-        });
-        const tax = subtotal * 0.18;
-        const total = subtotal + tax;
-        
-        document.getElementById('subtotal').value = subtotal.toFixed(2);
-        document.getElementById('tax').value = tax.toFixed(2);
-        document.getElementById('total').value = total.toFixed(2);
-    }
-    
-    // Attach listeners to initial row
-    document.querySelectorAll('.item-row').forEach(row => attachEventListeners(row));
 });
 </script>
 {% endblock %}

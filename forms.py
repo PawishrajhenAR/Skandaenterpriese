@@ -42,6 +42,11 @@ class BillForm(FlaskForm):
         ('NORMAL', 'Normal'),
         ('HANDBILL', 'Handbill')
     ], validators=[DataRequired()])
+    delivery_date = DateField('Delivery Date', validators=[Optional()])
+    billed_to_name = StringField('Billed To Name', validators=[Optional()])
+    shipped_to_name = StringField('Shipped To Name', validators=[Optional()])
+    delivery_recipient = StringField('Delivery Recipient (DR)', validators=[Optional()])
+    post = StringField('Post', validators=[Optional()])
     is_proxy = SelectField('Create Proxy Bills?', choices=[
         ('NO', 'No'),
         ('YES', 'Yes')
