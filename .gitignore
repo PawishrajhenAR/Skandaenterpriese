@@ -56,6 +56,10 @@ static/uploads/bills/*
 .env
 .env.local
 
+# Data files
+CustomerMasterDetails.csv
+*.csv
+
 # Logs
 *.log
 
