@@ -60,6 +60,12 @@ static/uploads/bills/*
 CustomerMasterDetails.csv
 *.csv
 
+# Archives
+*.zip
+
+# Summary/documentation files (temporary)
+GIT_PUSH_SUMMARY.md
+
 # Logs
 *.log
 
