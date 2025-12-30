@@ -66,36 +66,15 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        try:
-            user = User.query.filter_by(username=form.username.data).first()
-            if user and user.check_password(form.password.data) and user.is_active:
-                login_user(user)
-                next_page = request.args.get('next')
-                return redirect(next_page) if next_page else redirect(url_for('main.dashboard'))
-            else:
-                flash('Invalid username or password.', 'danger')
-        except Exception as e:
-            # Check if it's a database table not found error
-            error_str = str(e)
-            if 'does not exist' in error_str or 'UndefinedTable' in error_str:
-                flash('Database not initialized. Please visit /init-db first to set up the database.', 'warning')
-                return redirect(url_for('auth.login'))
-            else:
-                flash(f'Database error: {error_str}', 'danger')
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and user.check_password(form.password.data) and user.is_active:
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect(url_for('main.dashboard'))
+        else:
+            flash('Invalid username or password.', 'danger')
     
-    # Check if database is initialized (for GET request)
-    db_not_initialized = False
-    try:
-        # Try a simple query to check if tables exist
-        Tenant.query.first()
-    except Exception as e:
-        error_str = str(e)
-        if 'does not exist' in error_str or 'UndefinedTable' in error_str:
-            db_not_initialized = True
-            # Show a banner message on login page with link
-            flash('⚠️ Database not initialized! <a href="/init-db" class="alert-link">Click here to initialize the database</a>', 'warning')
-    
-    return render_template('auth/login.html', form=form, db_not_initialized=db_not_initialized)
+    return render_template('auth/login.html', form=form)
 
 
 @auth_bp.route('/logout')

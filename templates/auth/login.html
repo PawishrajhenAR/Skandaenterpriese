@@ -20,11 +20,11 @@
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
-                        <div class="toast show align-items-center text-white bg-{{ 'danger' if category == 'error' else category }} border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="10000">
+                        <div class="toast show align-items-center text-white bg-{{ 'danger' if category == 'error' else category }} border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="4000">
                             <div class="d-flex">
                                 <div class="toast-body">
                                     <i class="bi bi-{% if category == 'success' %}check-circle{% elif category == 'error' or category == 'danger' %}exclamation-triangle{% elif category == 'warning' %}exclamation-circle{% else %}info-circle{% endif %}-fill me-2"></i>
-                                    {{ message | safe }}
+                                    {{ message }}
                                 </div>
                                 <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
                             </div>
@@ -33,17 +33,6 @@
                 {% endif %}
             {% endwith %}
         </div>
-        
-        {% if db_not_initialized %}
-        <div class="alert alert-warning border-warning mb-4" role="alert">
-            <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Database Not Initialized</h5>
-            <p class="mb-3">The database needs to be set up before you can login. Click the button below to initialize it.</p>
-            <hr>
-            <a href="/init-db" class="btn btn-warning btn-sm">
-                <i class="bi bi-database-fill me-2"></i>Initialize Database
-            </a>
-        </div>
-        {% endif %}
         
         <form method="POST">
             {{ form.hidden_tag() }}

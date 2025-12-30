@@ -31,7 +31,8 @@ class VendorForm(FlaskForm):
     email = StringField('Email', validators=[Optional(), Email()])
     address = TextAreaField('Address', validators=[Optional()])
     gst_number = StringField('GST Number', validators=[Optional()])
-    credit_limit = DecimalField('Credit Limit', places=2, validators=[Optional(), NumberRange(min=0)])
+    credit_limit = DecimalField('Credit Limit', places=2, validators=[Optional(), NumberRange(min=0)], 
+                                render_kw={'step': '0.01', 'min': '0'})
 
 
 class BillForm(FlaskForm):
@@ -57,7 +58,8 @@ class BillForm(FlaskForm):
         ('FULL', 'Fully Paid'),
         ('PARTIAL', 'Partially Paid')
     ], default='NONE', validators=[Optional()])
-    partial_amount = DecimalField('Partial Payment Amount', places=2, validators=[Optional()])
+    partial_amount = DecimalField('Partial Payment Amount', places=2, validators=[Optional()],
+                                   render_kw={'step': '0.01', 'min': '0'})
     payment_method = SelectField('Payment Method', choices=[
         ('CASH', 'Cash'),
         ('UPI', 'UPI'),
@@ -78,7 +80,8 @@ class CreditEntryForm(FlaskForm):
     bill_id = SelectField('Bill', coerce=coerce_int_or_none, validators=[Optional()])
     proxy_bill_id = SelectField('Proxy Bill', coerce=coerce_int_or_none, validators=[Optional()])
     vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
-    amount = DecimalField('Amount', places=2, validators=[DataRequired(), NumberRange(min=0.01)])
+    amount = DecimalField('Amount', places=2, validators=[DataRequired(), NumberRange(min=0.01)],
+                          render_kw={'step': '0.01', 'min': '0.01'})
     direction = SelectField('Direction', choices=[
         ('INCOMING', 'Incoming'),
         ('OUTGOING', 'Outgoing')

@@ -408,38 +408,49 @@ def create():
             delivery_recipient=form.delivery_recipient.data if form.delivery_recipient.data else None,
             post=form.post.data if form.post.data else None
         )
-        db.session.add(bill)
-        db.session.commit()
-        log_action(current_user, 'CREATE_BILL', 'BILL', bill.id)
-        
-        # Handle payment - create credit entry if paid or partially paid
-        if form.payment_type.data in ['FULL', 'PARTIAL']:
-            payment_amount = bill.amount_total if form.payment_type.data == 'FULL' else (form.partial_amount.data or Decimal('0.00'))
+        try:
+            db.session.add(bill)
+            db.session.flush()  # Get bill.id before commit
+            log_action(current_user, 'CREATE_BILL', 'BILL', bill.id)
             
-            if payment_amount > 0:
-                credit = CreditEntry(
-                    tenant_id=tenant.id,
-                    bill_id=bill.id,
-                    vendor_id=bill.vendor_id,
-                    amount=payment_amount,
-                    direction='INCOMING',
-                    payment_method=form.payment_method.data or 'CASH',
-                    payment_date=bill.bill_date,
-                    reference_number=form.payment_reference.data,
-                    notes=f'Payment for bill {bill.bill_number}'
-                )
-                db.session.add(credit)
-                db.session.commit()
-                log_action(current_user, 'CREATE_CREDIT', 'CREDIT_ENTRY', credit.id)
+            # Handle payment - create credit entry if paid or partially paid
+            if form.payment_type.data in ['FULL', 'PARTIAL']:
+                payment_amount = bill.amount_total if form.payment_type.data == 'FULL' else (form.partial_amount.data or Decimal('0.00'))
                 
-                if form.payment_type.data == 'FULL':
-                    flash('Bill created and fully paid. Credit entry created.', 'success')
+                if payment_amount > 0:
+                    credit = CreditEntry(
+                        tenant_id=tenant.id,
+                        bill_id=bill.id,
+                        vendor_id=bill.vendor_id,
+                        amount=payment_amount,
+                        direction='INCOMING',
+                        payment_method=form.payment_method.data or 'CASH',
+                        payment_date=bill.bill_date,
+                        reference_number=form.payment_reference.data,
+                        notes=f'Payment for bill {bill.bill_number}'
+                    )
+                    db.session.add(credit)
+                    db.session.flush()
+                    log_action(current_user, 'CREATE_CREDIT', 'CREDIT_ENTRY', credit.id)
+            
+            db.session.commit()
+            
+            # Show success messages
+            if form.payment_type.data in ['FULL', 'PARTIAL']:
+                payment_amount = bill.amount_total if form.payment_type.data == 'FULL' else (form.partial_amount.data or Decimal('0.00'))
+                if payment_amount > 0:
+                    if form.payment_type.data == 'FULL':
+                        flash('Bill created and fully paid. Credit entry created.', 'success')
+                    else:
+                        flash(f'Bill created with partial payment of ₹{payment_amount}. Credit entry created.', 'success')
                 else:
-                    flash(f'Bill created with partial payment of ₹{payment_amount}. Credit entry created.', 'success')
+                    flash('Bill created successfully.', 'success')
             else:
-                flash('Bill created successfully.', 'success')
-        else:
-            flash('Bill created successfully (unpaid).', 'success')
+                flash('Bill created successfully (unpaid).', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error creating bill: {str(e)}', 'danger')
+            return render_template('bills/form.html', form=form, title='New Bill')
         
         # Handle proxy bill creation if requested
         if form.is_proxy.data == 'YES' and form.number_of_splits.data and form.number_of_splits.data > 0:

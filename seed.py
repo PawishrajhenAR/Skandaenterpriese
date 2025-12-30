@@ -144,7 +144,7 @@ with app.app_context():
     print("\nCreating users...")
     
     users_to_create = [
-        {'username': 'admin', 'role': 'ADMIN', 'password': 'admin123'},
+        {'username': 'admin', 'role': 'ADMIN', 'password': 'admin12233'},
         {'username': 'salesman', 'role': 'SALESMAN', 'password': 'salesman123'},
         {'username': 'delivery', 'role': 'DELIVERY', 'password': 'delivery123'},
         {'username': 'organiser', 'role': 'ORGANISER', 'password': 'organiser123'}
@@ -163,14 +163,18 @@ with app.app_context():
             db.session.add(user)
             print(f"  Created {user_data['role']} user: {user_data['username']} / {user_data['password']}")
         else:
-            print(f"  {user_data['role']} user already exists: {user_data['username']}")
+            # Update existing user password and role if needed
+            user.set_password(user_data['password'])
+            user.role = user_data['role']
+            user.is_active = True
+            print(f"  Updated {user_data['role']} user: {user_data['username']} / {user_data['password']}")
     
     db.session.commit()
     print("\n" + "="*50)
     print("Seed completed successfully!")
     print("="*50)
     print("You can now login with:")
-    print("  Admin:     admin / admin123")
+    print("  Admin:     admin / admin12233")
     print("  Salesman:  salesman / salesman123")
     print("  Delivery:  delivery / delivery123")
     print("  Organiser: organiser / organiser123")
