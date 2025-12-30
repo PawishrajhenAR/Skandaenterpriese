@@ -23,6 +23,19 @@ def create_app(config_name='default'):
     
     # Initialize extensions
     db.init_app(app)
+    
+    # Configure SQLAlchemy engine options if specified
+    if hasattr(config[config_name], 'SQLALCHEMY_ENGINE_OPTIONS'):
+        engine_options = config[config_name].SQLALCHEMY_ENGINE_OPTIONS
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
+    
+    # Initialize SQLite WAL mode for better concurrency (only for SQLite)
+    with app.app_context():
+        from extensions import init_sqlite_wal_mode, is_sqlite
+        database_uri = app.config['SQLALCHEMY_DATABASE_URI']
+        if is_sqlite(database_uri):
+            init_sqlite_wal_mode(database_uri)
+    
     login_manager.init_app(app)
     
     # User loader for Flask-Login
@@ -56,6 +69,51 @@ def create_app(config_name='default'):
     upload_folder = app.config['UPLOAD_FOLDER']
     os.makedirs(upload_folder, exist_ok=True)
     
+    # Create backup directory
+    backup_folder = app.config.get('BACKUP_FOLDER')
+    if backup_folder:
+        os.makedirs(backup_folder, exist_ok=True)
+    
+    # Database health check endpoint
+    @app.route('/health/db')
+    def db_health():
+        """Check database connection health"""
+        try:
+            from extensions import db, is_sqlite, is_postgresql
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
+            
+            database_uri = app.config['SQLALCHEMY_DATABASE_URI']
+            response = {
+                'status': 'healthy',
+                'database_type': 'postgresql' if is_postgresql(database_uri) else 'sqlite' if is_sqlite(database_uri) else 'unknown'
+            }
+            
+            # Add database-specific info
+            if is_sqlite(database_uri):
+                db_file = database_uri.replace('sqlite:///', '')
+                db_size = os.path.getsize(db_file) if os.path.exists(db_file) else 0
+                response['database_file'] = db_file
+                response['database_size_bytes'] = db_size
+                response['database_size_mb'] = round(db_size / (1024 * 1024), 2)
+            elif is_postgresql(database_uri):
+                # Get database name from connection string
+                try:
+                    # Extract database name from URI
+                    if '@' in database_uri:
+                        db_name = database_uri.split('/')[-1].split('?')[0]
+                        response['database_name'] = db_name
+                    # Get connection info
+                    result = db.session.execute(text("SELECT version()"))
+                    version = result.scalar()
+                    response['postgresql_version'] = version.split(',')[0] if version else 'unknown'
+                except:
+                    pass
+            
+            return response, 200
+        except Exception as e:
+            return {'status': 'unhealthy', 'error': str(e)}, 500
+    
     # Serve service worker with correct MIME type
     @app.route('/service-worker.js')
     def service_worker():
@@ -63,148 +121,6 @@ def create_app(config_name='default'):
         import os
         static_folder = app.static_folder or os.path.join(app.root_path, 'static')
         return send_from_directory(os.path.join(static_folder, 'js'), 'service-worker.js', mimetype='application/javascript')
-    
-    # Database initialization endpoint (for Render free tier - no shell access)
-    @app.route('/init-db')
-    def init_database():
-        from flask import jsonify, render_template_string
-        from models import Tenant, User, Permission, RolePermission
-        from extensions import db
-        import traceback
-        
-        try:
-            # Import all models to ensure they're registered with SQLAlchemy
-            from models import (
-                Tenant, User, Vendor, Bill, BillItem, ProxyBill, ProxyBillItem,
-                CreditEntry, DeliveryOrder, OCRJob, AuditLog, Permission, RolePermission
-            )
-            
-            # Create all tables
-            db.create_all()
-            
-            # Check if already initialized
-            tenant = Tenant.query.filter_by(code='skanda').first()
-            if tenant:
-                html = """
-                <!DOCTYPE html>
-                <html>
-                <head><title>Database Initialized</title></head>
-                <body style="font-family: Arial; padding: 40px; text-align: center;">
-                    <h2 style="color: #28a745;">✓ Database Already Initialized</h2>
-                    <p>Tenant: <strong>{}</strong></p>
-                    <p><a href="/login" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Login</a></p>
-                </body>
-                </html>
-                """.format(tenant.name)
-                return html, 200
-            
-            # Run seed logic
-            from seed import PERMISSIONS, DEFAULT_ROLE_PERMISSIONS
-            
-            # Create tenant
-            tenant = Tenant(
-                name='Skanda Enterprises',
-                code='skanda',
-                is_active=True
-            )
-            db.session.add(tenant)
-            db.session.flush()
-            
-            # Create permissions
-            for perm_data in PERMISSIONS:
-                perm = Permission(
-                    name=perm_data['name'],
-                    code=perm_data['code'],
-                    description=perm_data['description'],
-                    category=perm_data['category']
-                )
-                db.session.add(perm)
-            
-            db.session.flush()
-            
-            # Create role permissions
-            permissions = Permission.query.all()
-            roles = ['ADMIN', 'SALESMAN', 'DELIVERY', 'ORGANISER']
-            
-            for role in roles:
-                if role == 'ADMIN':
-                    for perm in permissions:
-                        role_perm = RolePermission(
-                            role=role,
-                            permission_id=perm.id,
-                            granted=True
-                        )
-                        db.session.add(role_perm)
-                else:
-                    default_perms = DEFAULT_ROLE_PERMISSIONS.get(role, [])
-                    for perm_code in default_perms:
-                        perm = Permission.query.filter_by(code=perm_code).first()
-                        if perm:
-                            role_perm = RolePermission(
-                                role=role,
-                                permission_id=perm.id,
-                                granted=True
-                            )
-                            db.session.add(role_perm)
-            
-            # Create users
-            users_to_create = [
-                {'username': 'admin', 'role': 'ADMIN', 'password': 'admin123'},
-                {'username': 'salesman', 'role': 'SALESMAN', 'password': 'salesman123'},
-                {'username': 'delivery', 'role': 'DELIVERY', 'password': 'delivery123'},
-                {'username': 'organiser', 'role': 'ORGANISER', 'password': 'organiser123'}
-            ]
-            
-            for user_data in users_to_create:
-                user = User(
-                    tenant_id=tenant.id,
-                    username=user_data['username'],
-                    role=user_data['role'],
-                    is_active=True
-                )
-                user.set_password(user_data['password'])
-                db.session.add(user)
-            
-            db.session.commit()
-            
-            # Return user-friendly HTML response
-            users_list = ', '.join([u['username'] for u in users_to_create])
-            html = """
-            <!DOCTYPE html>
-            <html>
-            <head><title>Database Initialized</title></head>
-            <body style="font-family: Arial; padding: 40px; text-align: center;">
-                <h2 style="color: #28a745;">✓ Database Initialized Successfully!</h2>
-                <p><strong>Tenant:</strong> {}</p>
-                <p><strong>Users Created:</strong> {}</p>
-                <div style="background: #f8f9fa; padding: 20px; margin: 20px auto; max-width: 500px; border-radius: 5px;">
-                    <h3>Default Login Credentials:</h3>
-                    <p><strong>Admin:</strong> admin / admin123</p>
-                    <p><strong>Salesman:</strong> salesman / salesman123</p>
-                    <p><strong>Delivery:</strong> delivery / delivery123</p>
-                    <p><strong>Organiser:</strong> organiser / organiser123</p>
-                </div>
-                <p><a href="/login" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Go to Login Page</a></p>
-            </body>
-            </html>
-            """.format(tenant.name, users_list)
-            return html, 200
-                
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            html = """
-            <!DOCTYPE html>
-            <html>
-            <head><title>Initialization Error</title></head>
-            <body style="font-family: Arial; padding: 40px;">
-                <h2 style="color: #dc3545;">✗ Database Initialization Failed</h2>
-                <p><strong>Error:</strong> {}</p>
-                <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto;">{}</pre>
-                <p><a href="/init-db" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Try Again</a></p>
-            </body>
-            </html>
-            """.format(str(e), error_trace)
-            return html, 500
     
     return app
 
@@ -216,7 +132,8 @@ app = create_app(os.environ.get('FLASK_ENV', 'production'))
 if __name__ == '__main__':
     # Development server
     app = create_app('development')
-    with app.app_context():
-        db.create_all()
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    # NOTE: db.create_all() should only be run via init_db.py
+    # Removing it from here prevents accidental database resets
+    # Run 'python init_db.py' manually to initialize database schema
+    app.run(debug=True, host='0.0.0.0', port=5000)
 
