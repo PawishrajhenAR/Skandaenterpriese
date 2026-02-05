@@ -82,3 +82,28 @@ The backend allows requests from `FRONTEND_URL`. Ensure:
 ## Render Service (Suspended)
 
 If the Render service is suspended, unsuspend it from the Render Dashboard to enable the backend.
+
+## Troubleshooting
+
+### CORS: "No 'Access-Control-Allow-Origin' header"
+
+1. **Set `FRONTEND_URL` in Render**  
+   Render Dashboard → Service → Environment → Add `FRONTEND_URL` = `https://skandaenterpriese.vercel.app` (or your actual Vercel URL).
+
+2. **Redeploy Render**  
+   After changing env vars, trigger a manual deploy so the backend picks up the new CORS origin.
+
+3. **Check URL match**  
+   The origin must match exactly (including `https://` and no trailing slash).
+
+### 404 on root URL (Render)
+
+If `GET /` returns 404, the backend may be running an old build. Redeploy the Render service.
+
+### Frontend calling wrong backend URL
+
+If the frontend still calls `skandaenterpriese.onrender.com` instead of `skandaenterpriese-1.onrender.com`:
+
+1. Ensure `frontend/js/config.js` has the correct `API_BASE` for your Render service.
+2. Redeploy Vercel so the updated config is served.
+3. Hard refresh (Ctrl+Shift+R) or clear cache to avoid cached JS.

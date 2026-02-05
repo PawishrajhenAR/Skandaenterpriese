@@ -16,10 +16,17 @@ def create_app(config_name='default'):
     try:
         from flask_cors import CORS
         frontend_url = os.environ.get('FRONTEND_URL', '')
-        origins = [u.strip() for u in frontend_url.split(',') if u.strip()] if frontend_url else None
-        # credentials=True requires specific origins; default dev: localhost
-        if not origins:
-            origins = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8080']
+        origins = [u.strip() for u in frontend_url.split(',') if u.strip()] if frontend_url else []
+        # Include Vercel production URL by default so CORS works even if FRONTEND_URL not set
+        default_origins = [
+            'https://skandaenterpriese.vercel.app',
+            'https://skandaenterpriese-pawishrajhenars-projects.vercel.app',
+            'https://skandaenterpriese-git-main-pawishrajhenars-projects.vercel.app',
+            'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8080'
+        ]
+        for o in default_origins:
+            if o not in origins:
+                origins.append(o)
         CORS(app, origins=origins, supports_credentials=True,
              allow_headers=['Content-Type', 'Authorization'],
              expose_headers=['Content-Type'])
@@ -63,6 +70,15 @@ def create_app(config_name='default'):
             os.makedirs(backup_folder, exist_ok=True)
     except (OSError, PermissionError):
         pass
+    
+    # Root: API-only backend - direct users to frontend
+    @app.route('/')
+    def root():
+        return jsonify({
+            'message': 'Skanda API. Use the frontend at https://skandaenterpriese.vercel.app',
+            'api': '/api/*',
+            'health': '/health'
+        }), 200
     
     # Health endpoints for deployment verification
     @app.route('/health')
