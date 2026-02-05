@@ -38,14 +38,15 @@ All API routes are under `/api/`:
 
 ## Frontend (Vercel)
 
-### Configuration
+### Configuration (required to fix 404s)
 
-1. In Vercel Project Settings → General → **Root Directory**: Enable Override, set to `frontend`
-2. **Framework Preset**: Other (static site)
-3. **Build Command**: (leave empty)
-4. **Output Directory**: `.` (serves files from frontend/ directly)
+1. In Vercel Dashboard → Project **skandaenterpriese** → **Settings** → **General**
+2. **Root Directory**: Enable "Override" → set to `frontend`
+3. **Framework Preset**: Other (static)
+4. **Build Command**: (leave empty)
+5. Click **Save**, then go to **Deployments** → **Redeploy** (or push to GitHub)
 
-After changing Root Directory, trigger a new deployment.
+Without Root Directory = `frontend`, Vercel deploys Flask (which has no `/` route) and returns 404.
 
 ### Environment Variables
 
