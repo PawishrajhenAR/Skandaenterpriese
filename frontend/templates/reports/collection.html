@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Collection Report - Skanda Credit & Billing{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Collection Report</h1>
+    <div>
+        <a href="{{ url_for('report.outstanding') }}" class="btn btn-secondary">Outstanding Report</a>
+        <a href="{{ url_for('report.deliveries') }}" class="btn btn-secondary">Deliveries Report</a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="POST" id="collection-report-form">
+            {{ form.hidden_tag() }}
+            <div class="row">
+                <div class="col-md-4">
+                    {{ form.start_date.label(class="form-label") }}
+                    <div class="input-group">
+                        {{ form.start_date(class="form-control", id="start_date", type="text", readonly=true) }}
+                        <button type="button" class="btn btn-outline-secondary date-input-trigger" 
+                                data-start-field="start_date" 
+                                data-end-field="end_date">
+                            <i class="bi bi-calendar"></i>
+                        </button>
+                    </div>
+                    {% if form.start_date.errors %}
+                        <div class="text-danger small">{{ form.start_date.errors[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4">
+                    {{ form.end_date.label(class="form-label") }}
+                    <div class="input-group">
+                        {{ form.end_date(class="form-control", id="end_date", type="text", readonly=true) }}
+                        <button type="button" class="btn btn-outline-secondary date-input-trigger" 
+                                data-start-field="start_date" 
+                                data-end-field="end_date">
+                            <i class="bi bi-calendar"></i>
+                        </button>
+                    </div>
+                    {% if form.end_date.errors %}
+                        <div class="text-danger small">{{ form.end_date.errors[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary">Generate Report</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if results %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Report Results ({{ results.start_date }} to {{ results.end_date }})</h5>
+        <div class="btn-group" role="group">
+            <button type="button" class="btn btn-sm btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download"></i> Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('report.collection_export_pdf', start_date=results.start_date.strftime('%Y-%m-%d'), end_date=results.end_date.strftime('%Y-%m-%d')) }}">
+                    <i class="bi bi-file-pdf text-danger"></i> Export as PDF
+                </a></li>
+                <li><a class="dropdown-item" href="{{ url_for('report.collection_export_excel', start_date=results.start_date.strftime('%Y-%m-%d'), end_date=results.end_date.strftime('%Y-%m-%d')) }}">
+                    <i class="bi bi-file-excel text-success"></i> Export as Excel
+                </a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="card" style="background-color: #d4edda;">
+                    <div class="card-body">
+                        <h6 style="color: #666;">Total Incoming</h6>
+                        <h3 style="color: #1b5e20; font-weight: bold;">₹{{ "%.2f"|format(results.total_incoming) }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card" style="background-color: #f8d7da;">
+                    <div class="card-body">
+                        <h6 style="color: #666;">Total Outgoing</h6>
+                        <h3 style="color: #b71c1c; font-weight: bold;">₹{{ "%.2f"|format(results.total_outgoing) }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h6>Net</h6>
+                        <h3>₹{{ "%.2f"|format(results.net) }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
+{% endblock %}
+

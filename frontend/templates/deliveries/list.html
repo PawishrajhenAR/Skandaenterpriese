@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% from "components/filter_panel.html" import filter_panel %}
+
+{% block title %}Deliveries - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-truck"></i> Delivery Management</h1>
+    {% if has_permission('create_delivery') %}
+    <a href="{{ url_for('delivery.create') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> New Delivery Order
+    </a>
+    {% endif %}
+</div>
+
+{% if filters %}
+{{ filter_panel(filters, active_filters) }}
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-list-ul"></i> Delivery Orders ({{ deliveries|length }} found)
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if deliveries %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th class="sortable">Date <i class="bi bi-arrow-down-up"></i></th>
+                        <th>Bill/Proxy</th>
+                        <th class="sortable">Delivery User <i class="bi bi-arrow-down-up"></i></th>
+                        <th>Address</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for delivery in deliveries %}
+                    <tr>
+                        <td>
+                            <i class="bi bi-calendar"></i> {{ delivery.delivery_date.strftime('%Y-%m-%d') }}
+                        </td>
+                        <td>
+                            {% if delivery.bill %}
+                                <a href="{{ url_for('bill.detail', id=delivery.bill_id) }}" class="text-decoration-none">
+                                    <i class="bi bi-receipt"></i> Bill {{ delivery.bill.bill_number }}
+                                </a>
+                            {% elif delivery.proxy_bill %}
+                                <a href="{{ url_for('proxy.detail', id=delivery.proxy_bill_id) }}" class="text-decoration-none">
+                                    <i class="bi bi-file-earmark-text"></i> Proxy {{ delivery.proxy_bill.proxy_number }}
+                                </a>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <i class="bi bi-person"></i> {{ delivery.delivery_user.username }}
+                        </td>
+                        <td>
+                            <i class="bi bi-geo-alt"></i> {{ delivery.delivery_address[:50] }}{% if delivery.delivery_address|length > 50 %}...{% endif %}
+                        </td>
+                        <td>
+                            {% if delivery.status == 'PENDING' %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-clock"></i> PENDING
+                                </span>
+                            {% elif delivery.status == 'IN_TRANSIT' %}
+                                <span class="badge bg-info">
+                                    <i class="bi bi-truck"></i> IN_TRANSIT
+                                </span>
+                            {% elif delivery.status == 'DELIVERED' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle"></i> DELIVERED
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-x-circle"></i> CANCELLED
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('delivery.detail', id=delivery.id) }}" 
+                               class="btn btn-sm btn-outline-primary" 
+                               data-bs-toggle="tooltip" 
+                               title="View Details">
+                                <i class="bi bi-eye"></i> View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <h4>No deliveries found</h4>
+            <p class="text-muted">Try adjusting your filters or create a new delivery order.</p>
+            {% if has_permission('create_delivery') %}
+            <a href="{{ url_for('delivery.create') }}" class="btn btn-primary mt-3">
+                <i class="bi bi-plus-circle"></i> Create First Delivery
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

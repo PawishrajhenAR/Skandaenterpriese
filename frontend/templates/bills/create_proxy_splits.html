@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Create Proxy Splits - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Create Proxy Bills for: {{ bill.bill_number }}</h1>
+    <a href="{{ url_for('bill.detail', id=bill.id) }}" class="btn btn-secondary">Back to Bill</a>
+</div>
+
+<div class="alert alert-info">
+    <strong>Parent Bill Total:</strong> ₹{{ "%.2f"|format(bill.amount_total) }}<br>
+    <strong>Number of Splits:</strong> {{ splits }}
+</div>
+
+<form method="POST" id="proxySplitsForm">
+    {% for i in range(splits) %}
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="mb-0">Proxy Bill #{{ i + 1 }}</h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Proxy Bill Number</label>
+                    <input type="text" name="proxy_number_{{ i }}" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Vendor (End Customer)</label>
+                    <select name="vendor_id_{{ i }}" class="form-select" required>
+                        <option value="">Select Vendor</option>
+                        {% for vendor in vendors %}
+                        <option value="{{ vendor.id }}">{{ vendor.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+            <h6>Items for Proxy Bill #{{ i + 1 }}</h6>
+            <div class="proxy-items-container" data-split="{{ i }}">
+                <div class="item-row mb-2">
+                    <div class="row g-2">
+                        <div class="col-md-5">
+                            <input type="text" name="item_description_{{ i }}[]" class="form-control" placeholder="Description" required>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" step="0.01" name="item_quantity_{{ i }}[]" class="form-control qty" placeholder="Qty" required>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" step="0.01" name="item_unit_price_{{ i }}[]" class="form-control price" placeholder="Price" required>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="text" name="item_amount_{{ i }}[]" class="form-control amount" placeholder="Amount" readonly>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-danger btn-sm remove-item">Remove</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm mb-3 add-proxy-item" data-split="{{ i }}">Add Item</button>
+            
+            <div class="row">
+                <div class="col-md-4">
+                    <label class="form-label">Total for this Proxy</label>
+                    <input type="text" class="form-control proxy-total" data-split="{{ i }}" value="0.00" readonly>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Create All Proxy Bills</button>
+        <a href="{{ url_for('bill.detail', id=bill.id) }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add item to proxy bill
+    document.querySelectorAll('.add-proxy-item').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const split = this.dataset.split;
+            const container = document.querySelector(`.proxy-items-container[data-split="${split}"]`);
+            
+            const newRow = document.createElement('div');
+            newRow.className = 'item-row mb-2';
+            newRow.innerHTML = `
+                <div class="row g-2">
+                    <div class="col-md-5">
+                        <input type="text" name="item_description_${split}[]" class="form-control" placeholder="Description" required>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" step="0.01" name="item_quantity_${split}[]" class="form-control qty" placeholder="Qty" required>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" step="0.01" name="item_unit_price_${split}[]" class="form-control price" placeholder="Price" required>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" name="item_amount_${split}[]" class="form-control amount" placeholder="Amount" readonly>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-danger btn-sm remove-item">Remove</button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(newRow);
+            attachEventListeners(newRow, split);
+        });
+    });
+    
+    // Remove item
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('remove-item')) {
+            const row = e.target.closest('.item-row');
+            const container = row.closest('.proxy-items-container');
+            const split = container.dataset.split;
+            
+            if (container.querySelectorAll('.item-row').length > 1) {
+                row.remove();
+                calculateProxyTotal(split);
+            }
+        }
+    });
+    
+    function attachEventListeners(row, split) {
+        const qty = row.querySelector('.qty');
+        const price = row.querySelector('.price');
+        const amount = row.querySelector('.amount');
+        
+        [qty, price].forEach(input => {
+            input.addEventListener('input', function() {
+                const q = parseFloat(qty.value) || 0;
+                const p = parseFloat(price.value) || 0;
+                amount.value = (q * p).toFixed(2);
+                calculateProxyTotal(split);
+            });
+        });
+    }
+    
+    function calculateProxyTotal(split) {
+        const container = document.querySelector(`.proxy-items-container[data-split="${split}"]`);
+        let total = 0;
+        container.querySelectorAll('.amount').forEach(amt => {
+            total += parseFloat(amt.value) || 0;
+        });
+        document.querySelector(`.proxy-total[data-split="${split}"]`).value = total.toFixed(2);
+    }
+    
+    // Attach listeners to initial rows
+    document.querySelectorAll('.proxy-items-container').forEach(container => {
+        const split = container.dataset.split;
+        container.querySelectorAll('.item-row').forEach(row => {
+            attachEventListeners(row, split);
+        });
+    });
+});
+</script>
+{% endblock %}
+

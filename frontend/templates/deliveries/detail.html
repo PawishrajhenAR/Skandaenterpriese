@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Delivery Detail - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Delivery Order #{{ delivery.id }}</h1>
+    <a href="{{ url_for('delivery.list') }}" class="btn btn-secondary">Back to List</a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Delivery Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Bill/Proxy:</strong></div>
+                    <div class="col-md-9">
+                        {% if delivery.bill %}
+                            <a href="{{ url_for('bill.detail', id=delivery.bill_id) }}">Bill {{ delivery.bill.bill_number }}</a>
+                        {% elif delivery.proxy_bill %}
+                            <a href="{{ url_for('proxy.detail', id=delivery.proxy_bill_id) }}">Proxy {{ delivery.proxy_bill.proxy_number }}</a>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Delivery User:</strong></div>
+                    <div class="col-md-9">{{ delivery.delivery_user.username }}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Delivery Date:</strong></div>
+                    <div class="col-md-9">{{ delivery.delivery_date.strftime('%Y-%m-%d') }}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Address:</strong></div>
+                    <div class="col-md-9">{{ delivery.delivery_address }}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Status:</strong></div>
+                    <div class="col-md-9">
+                        {% if delivery.status == 'PENDING' %}
+                            <span class="badge bg-warning">PENDING</span>
+                        {% elif delivery.status == 'IN_TRANSIT' %}
+                            <span class="badge bg-info">IN_TRANSIT</span>
+                        {% elif delivery.status == 'DELIVERED' %}
+                            <span class="badge bg-success">DELIVERED</span>
+                        {% else %}
+                            <span class="badge bg-danger">CANCELLED</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if delivery.remarks %}
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Remarks:</strong></div>
+                    <div class="col-md-9">{{ delivery.remarks }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Update Status</h5>
+            </div>
+            <div class="card-body">
+                {% if has_permission('update_delivery') %}
+                <form method="POST" action="{{ url_for('delivery.update_status', id=delivery.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <option value="PENDING" {% if delivery.status == 'PENDING' %}selected{% endif %}>PENDING</option>
+                            <option value="IN_TRANSIT" {% if delivery.status == 'IN_TRANSIT' %}selected{% endif %}>IN_TRANSIT</option>
+                            <option value="DELIVERED" {% if delivery.status == 'DELIVERED' %}selected{% endif %}>DELIVERED</option>
+                            <option value="CANCELLED" {% if delivery.status == 'CANCELLED' %}selected{% endif %}>CANCELLED</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Update Status</button>
+                </form>
+                {% else %}
+                <p class="text-muted">You do not have permission to update delivery status.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

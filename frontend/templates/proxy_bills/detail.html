@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Proxy Bill Detail - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Proxy Bill: {{ proxy_bill.proxy_number }}</h1>
+    <a href="{{ url_for('proxy.list') }}" class="btn btn-secondary">Back to List</a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Proxy Bill Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Parent Bill:</strong></div>
+                    <div class="col-md-9">
+                        <a href="{{ url_for('bill.detail', id=proxy_bill.parent_bill_id) }}">{{ proxy_bill.parent_bill.bill_number }}</a>
+                    </div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Vendor:</strong></div>
+                    <div class="col-md-9">{{ proxy_bill.vendor.name }}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Status:</strong></div>
+                    <div class="col-md-9">
+                        {% if proxy_bill.status == 'DRAFT' %}
+                            <span class="badge bg-warning">DRAFT</span>
+                        {% elif proxy_bill.status == 'CONFIRMED' %}
+                            <span class="badge bg-success">CONFIRMED</span>
+                        {% else %}
+                            <span class="badge bg-danger">CANCELLED</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Items</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th>Quantity</th>
+                                <th>Unit Price</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in proxy_bill.items %}
+                            <tr>
+                                <td>{{ item.description }}</td>
+                                <td>{{ item.quantity }}</td>
+                                <td>₹{{ "%.2f"|format(item.unit_price) }}</td>
+                                <td>₹{{ "%.2f"|format(item.amount) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="3">Total</th>
+                                <th>₹{{ "%.2f"|format(proxy_bill.amount_total) }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Actions</h5>
+            </div>
+            <div class="card-body">
+                {% if proxy_bill.status == 'DRAFT' and has_permission('confirm_bill') %}
+                    <form method="POST" action="{{ url_for('proxy.confirm', id=proxy_bill.id) }}" class="mb-2">
+                        <button type="submit" class="btn btn-success w-100">Confirm Proxy Bill</button>
+                    </form>
+                {% endif %}
+                {% if proxy_bill.status != 'CANCELLED' and has_permission('cancel_bill') %}
+                    <form method="POST" action="{{ url_for('proxy.cancel', id=proxy_bill.id) }}" class="mb-2" onsubmit="return confirm('Are you sure?');">
+                        <button type="submit" class="btn btn-danger w-100">Cancel Proxy Bill</button>
+                    </form>
+                {% endif %}
+                {% if has_permission('create_credit') %}
+                <a href="{{ url_for('credit.create', proxy_bill_id=proxy_bill.id, vendor_id=proxy_bill.vendor_id) }}" class="btn btn-info w-100 mb-2">Add Credit Payment</a>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if credits %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Credit Entries</h5>
+            </div>
+            <div class="card-body">
+                {% for credit in credits %}
+                <div class="mb-2">
+                    <strong>₹{{ "%.2f"|format(credit.amount) }}</strong> - {{ credit.direction }}<br>
+                    <small class="text-muted">{{ credit.payment_date.strftime('%Y-%m-%d') }} - {{ credit.payment_method }}</small>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+

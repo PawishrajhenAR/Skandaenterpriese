@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Permission Management - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Permission Management</h1>
+    <div class="alert alert-info mb-0">
+        <strong>Note:</strong> ADMIN role has all permissions by default and cannot be modified.
+    </div>
+</div>
+
+<form method="POST" action="{{ url_for('permission.update') }}">
+    <div class="card">
+        <div class="card-header" style="display: block !important; padding: 1rem 0;">
+            <div class="row g-0 align-items-center mx-0">
+                <div class="col-md-3 ps-4">
+                    <strong>Permission</strong>
+                </div>
+                <div class="col-md-2 d-flex justify-content-center align-items-center">
+                    <strong>ADMIN</strong>
+                </div>
+                <div class="col-md-2 d-flex justify-content-center align-items-center">
+                    <strong>SALESMAN</strong>
+                </div>
+                <div class="col-md-2 d-flex justify-content-center align-items-center">
+                    <strong>DELIVERY</strong>
+                </div>
+                <div class="col-md-2 d-flex justify-content-center align-items-center">
+                    <strong>ORGANISER</strong>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            {% set current_category = '' %}
+            {% for permission in permissions %}
+                {% if permission.category != current_category %}
+                    {% if current_category != '' %}
+                        </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <h5 class="text-primary">{{ permission.category }}</h5>
+                        {% set current_category = permission.category %}
+                {% endif %}
+                
+                <div class="row g-0 align-items-center mb-2 mx-0">
+                    <div class="col-md-3 ps-4">
+                        <label class="form-label mb-0">
+                            {{ permission.name }}
+                            <small class="text-muted d-block">{{ permission.description or permission.code }}</small>
+                        </label>
+                    </div>
+                    <div class="col-md-2 d-flex justify-content-center align-items-center">
+                        <span class="badge bg-success">✓ Allowed</span>
+                    </div>
+                    <div class="col-md-2 d-flex justify-content-center align-items-center">
+                        <input type="checkbox" 
+                               name="perm_SALESMAN_{{ permission.code }}" 
+                               {% if role_permissions['SALESMAN'][permission.code] %}checked{% endif %}
+                               class="form-check-input">
+                    </div>
+                    <div class="col-md-2 d-flex justify-content-center align-items-center">
+                        <input type="checkbox" 
+                               name="perm_DELIVERY_{{ permission.code }}" 
+                               {% if role_permissions['DELIVERY'][permission.code] %}checked{% endif %}
+                               class="form-check-input">
+                    </div>
+                    <div class="col-md-2 d-flex justify-content-center align-items-center">
+                        <input type="checkbox" 
+                               name="perm_ORGANISER_{{ permission.code }}" 
+                               {% if role_permissions['ORGANISER'][permission.code] %}checked{% endif %}
+                               class="form-check-input">
+                    </div>
+                </div>
+            {% endfor %}
+            </div>
+        </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary">Save Permissions</button>
+            <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </div>
+</form>
+{% endblock %}
+

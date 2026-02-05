@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% from "components/filter_panel.html" import filter_panel %}
+
+{% block title %}Credits - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-cash-coin"></i> Credit Management</h1>
+    {% if has_permission('create_credit') %}
+    <a href="{{ url_for('credit.create') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> New Credit Entry
+    </a>
+    {% endif %}
+</div>
+
+{% if filters %}
+{{ filter_panel(filters, active_filters) }}
+{% endif %}
+
+<!-- Outstanding Bills Section -->
+{% if unpaid_bills %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-exclamation-triangle-fill"></i> Outstanding Bills (Unpaid) - {{ unpaid_bills|length }} bills
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th class="sortable">Bill Number <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Vendor <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Date <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Total Amount <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Paid <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Outstanding <i class="bi bi-arrow-down-up"></i></th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in unpaid_bills %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('bill.detail', id=item.bill.id) }}" class="text-decoration-none">
+                                <strong><i class="bi bi-receipt"></i> {{ item.bill.bill_number }}</strong>
+                            </a>
+                        </td>
+                        <td>
+                            <i class="bi bi-person"></i> {{ item.bill.vendor.name }}
+                        </td>
+                        <td>
+                            <i class="bi bi-calendar"></i> {{ item.bill.bill_date.strftime('%Y-%m-%d') }}
+                        </td>
+                        <td>₹{{ "%.2f"|format(item.total) }}</td>
+                        <td>₹{{ "%.2f"|format(item.paid) }}</td>
+                        <td>
+                            <strong class="text-danger">
+                                <i class="bi bi-exclamation-circle"></i> ₹{{ "%.2f"|format(item.outstanding) }}
+                            </strong>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('bill.detail', id=item.bill.id) }}" 
+                               class="btn btn-sm btn-outline-primary" 
+                               data-bs-toggle="tooltip" 
+                               title="View Bill">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            <a href="{{ url_for('credit.create', bill_id=item.bill.id, vendor_id=item.bill.vendor_id) }}" 
+                               class="btn btn-sm btn-outline-success" 
+                               data-bs-toggle="tooltip" 
+                               title="Add Payment">
+                                <i class="bi bi-plus-circle"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Credit Entries Section -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-list-ul"></i> Credit Entries ({{ credits|length }} found)
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if credits %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th class="sortable">Date <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Vendor <i class="bi bi-arrow-down-up"></i></th>
+                        <th class="sortable">Amount <i class="bi bi-arrow-down-up"></i></th>
+                        <th>Direction</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th>Bill/Proxy</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for credit in credits %}
+                    <tr>
+                        <td>
+                            <i class="bi bi-calendar"></i> {{ credit.payment_date.strftime('%Y-%m-%d') }}
+                        </td>
+                        <td>
+                            <i class="bi bi-person"></i> {{ credit.vendor.name }}
+                        </td>
+                        <td>
+                            <strong class="text-primary">₹{{ "%.2f"|format(credit.amount) }}</strong>
+                        </td>
+                        <td>
+                            {% if credit.direction == 'INCOMING' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-arrow-down-circle"></i> INCOMING
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-arrow-up-circle"></i> OUTGOING
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-info">
+                                <i class="bi bi-wallet2"></i> {{ credit.payment_method }}
+                            </span>
+                        </td>
+                        <td>{{ credit.reference_number or '-' }}</td>
+                        <td>
+                            {% if credit.bill %}
+                                <a href="{{ url_for('bill.detail', id=credit.bill_id) }}" class="text-decoration-none">
+                                    <i class="bi bi-receipt"></i> Bill {{ credit.bill.bill_number }}
+                                </a>
+                            {% elif credit.proxy_bill %}
+                                <a href="{{ url_for('proxy.detail', id=credit.proxy_bill_id) }}" class="text-decoration-none">
+                                    <i class="bi bi-file-earmark-text"></i> Proxy {{ credit.proxy_bill.proxy_number }}
+                                </a>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if has_permission('edit_credit') %}
+                            <a href="{{ url_for('credit.edit', id=credit.id) }}" 
+                               class="btn btn-sm btn-outline-primary" 
+                               data-bs-toggle="tooltip" 
+                               title="Edit Credit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <h4>No credit entries found</h4>
+            <p class="text-muted">Try adjusting your filters or create a new credit entry.</p>
+            {% if has_permission('create_credit') %}
+            <a href="{{ url_for('credit.create') }}" class="btn btn-primary mt-3">
+                <i class="bi bi-plus-circle"></i> Create First Credit Entry
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

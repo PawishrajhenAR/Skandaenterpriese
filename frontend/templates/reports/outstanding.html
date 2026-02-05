@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Outstanding Report - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Outstanding Report</h1>
+    <div>
+        <div class="btn-group" role="group">
+            <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download"></i> Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('report.outstanding_export_pdf') }}">
+                    <i class="bi bi-file-pdf text-danger"></i> Export as PDF
+                </a></li>
+                <li><a class="dropdown-item" href="{{ url_for('report.outstanding_export_excel') }}">
+                    <i class="bi bi-file-excel text-success"></i> Export as Excel
+                </a></li>
+            </ul>
+        </div>
+        <a href="{{ url_for('report.collection') }}" class="btn btn-secondary ms-2">Collection Report</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Vendor</th>
+                        <th>Total Billed</th>
+                        <th>Total Incoming</th>
+                        <th>Total Outgoing</th>
+                        <th>Outstanding</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for result in results %}
+                    <tr>
+                        <td>{{ result.vendor.name }}</td>
+                        <td>₹{{ "%.2f"|format(result.total_billed) }}</td>
+                        <td>₹{{ "%.2f"|format(result.total_incoming) }}</td>
+                        <td>₹{{ "%.2f"|format(result.total_outgoing) }}</td>
+                        <td>
+                            <strong class="{% if result.outstanding > 0 %}text-danger{% else %}text-success{% endif %}">
+                                ₹{{ "%.2f"|format(result.outstanding) }}
+                            </strong>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No outstanding amounts found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

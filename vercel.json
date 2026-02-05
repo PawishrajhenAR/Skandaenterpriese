@@ -6,14 +6,15 @@
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/ vercel.json",
   "rewrites": [
     {"source": "/", "destination": "/index.html"},
-    {"source": "/favicon.ico", "destination": "/icons/icon-192x192.png"}
+    {"source": "/favicon.ico", "destination": "/icons/icon-192x192.png"},
+    {"source": "/dashboard.html", "destination": "/templates/dashboard.html"},
+    {"source": "/bills.html", "destination": "/templates/bills/list.html"},
+    {"source": "/vendors.html", "destination": "/templates/vendors/list.html"}
   ],
   "headers": [
     {
       "source": "/js/config.js",
-      "headers": [
-        {"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}
-      ]
+      "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
     }
   ]
 }

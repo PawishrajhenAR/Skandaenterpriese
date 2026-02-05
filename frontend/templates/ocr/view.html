@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}OCR Result - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>OCR Result</h1>
+    <a href="{{ url_for('bill.detail', id=ocr_job.bill_id) }}" class="btn btn-secondary">Back to Bill</a>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Image</h5>
+            </div>
+            <div class="card-body">
+                {% if ocr_job.image_path %}
+                    <img src="{{ url_for('static', filename=ocr_job.image_path) }}" class="img-fluid" alt="Bill Image">
+                {% else %}
+                    <p class="text-muted">No image available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Extracted Text</h5>
+            </div>
+            <div class="card-body">
+                <pre class="bg-light p-3" style="white-space: pre-wrap; max-height: 500px; overflow-y: auto;">{{ ocr_job.raw_text or 'No text extracted.' }}</pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

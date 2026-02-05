@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Deliveries Report - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Deliveries Report</h1>
+    <div>
+        <div class="btn-group" role="group">
+            <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download"></i> Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('report.deliveries_export_pdf') }}">
+                    <i class="bi bi-file-pdf text-danger"></i> Export as PDF
+                </a></li>
+                <li><a class="dropdown-item" href="{{ url_for('report.deliveries_export_excel') }}">
+                    <i class="bi bi-file-excel text-success"></i> Export as Excel
+                </a></li>
+            </ul>
+        </div>
+        <a href="{{ url_for('report.outstanding') }}" class="btn btn-secondary ms-2">Outstanding Report</a>
+        <a href="{{ url_for('report.collection') }}" class="btn btn-secondary">Collection Report</a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">Pending</h5>
+                <h2 class="text-warning">{{ stats.pending }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">In Transit</h5>
+                <h2 class="text-info">{{ stats.in_transit }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">Delivered</h5>
+                <h2 class="text-success">{{ stats.delivered }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">Cancelled</h5>
+                <h2 class="text-danger">{{ stats.cancelled }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">Total Deliveries: {{ stats.total }}</h5>
+    </div>
+</div>
+
+{% if delivery_orders %}
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">Delivery Details</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Delivery Person</th>
+                        <th>Bill/Proxy Bill</th>
+                        <th>Status</th>
+                        <th>Address</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in delivery_orders %}
+                    <tr>
+                        <td>{{ order.delivery_date.strftime('%d %b %Y') }}</td>
+                        <td>{{ order.delivery_user.username if order.delivery_user else 'N/A' }}</td>
+                        <td>
+                            {% if order.bill %}
+                                Bill: {{ order.bill.bill_number }}
+                            {% elif order.proxy_bill %}
+                                Proxy: {{ order.proxy_bill.proxy_number }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge 
+                                {% if order.status == 'PENDING' %}bg-warning
+                                {% elif order.status == 'IN_TRANSIT' %}bg-info
+                                {% elif order.status == 'DELIVERED' %}bg-success
+                                {% elif order.status == 'CANCELLED' %}bg-danger
+                                {% endif %}">
+                                {{ order.status }}
+                            </span>
+                        </td>
+                        <td>{{ order.delivery_address[:100] }}{% if order.delivery_address|length > 100 %}...{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
