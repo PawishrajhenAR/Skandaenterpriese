@@ -107,3 +107,21 @@ If the frontend still calls `skandaenterpriese.onrender.com` instead of `skandae
 1. Ensure `frontend/js/config.js` has the correct `API_BASE` for your Render service.
 2. Redeploy Vercel so the updated config is served.
 3. Hard refresh (Ctrl+Shift+R) or clear cache to avoid cached JS.
+
+### "relation users does not exist" (Database not initialized)
+
+The Supabase database needs tables. Two options:
+
+**Option A – Supabase SQL Editor (recommended for first time):**
+
+1. Supabase Dashboard → **SQL Editor**
+2. Paste the contents of `migrations/001_initial_schema.sql`
+3. Run it
+4. Locally (with `DATABASE_URL` in `.env`): `python seed_supabase.py`
+5. Redeploy Render
+
+**Option B – Render pre-deploy command:**
+
+`render.yaml` includes `preDeployCommand: python run_migrations.py && python seed_supabase.py`. On each deploy, Render runs migrations then seed before starting the app. Ensure `DATABASE_URL` is set in Render.
+
+If pre-deploy is not available on your plan, set it manually in Render Dashboard → Service → **Settings** → **Pre-Deploy Command**: `python run_migrations.py && python seed_supabase.py`
