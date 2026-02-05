@@ -1,6 +1,8 @@
 {
-  "installCommand": "pip install -r requirements-vercel.txt",
-  "buildCommand": "python vercel_build.py",
-  "framework": "flask",
-  "regions": ["sin1"]
+  "framework": null,
+  "outputDirectory": "frontend",
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" },
+    { "source": "/favicon.ico", "destination": "/icons/icon-192x192.png" }
+  ]
 }
