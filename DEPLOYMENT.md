@@ -2,7 +2,7 @@
 
 ## Architecture
 
-- **Backend (Render)**: Flask API-only at `https://skandaenterpriese.onrender.com`
+- **Backend (Render)**: Flask API-only at `https://skandaenterpriese-1.onrender.com`
 - **Frontend (Vercel)**: Static HTML/CSS/JS at `https://skandaenterpriese.vercel.app`
 - **Database**: Supabase PostgreSQL
 
@@ -52,7 +52,7 @@ Without Root Directory = `frontend`, Vercel deploys Flask (which has no `/` rout
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `API_URL` | No | Backend API URL. Default: `https://skandaenterpriese.onrender.com` |
+| `API_URL` | No | Backend API URL. Default: `https://skandaenterpriese-1.onrender.com` |
 
 To override the API URL, set `API_URL` and add a build command that injects it into `js/config.js`.
 
