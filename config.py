@@ -19,17 +19,17 @@ _vercel = os.environ.get('VERCEL') == '1'
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # Cross-origin session for API + static frontend (Vercel -> Render)
+    SESSION_COOKIE_SAMESITE = 'Lax'  # 'None' when FRONTEND_URL set (production)
     
-    # Database: Supabase PostgreSQL only (DATABASE_URL required)
-    database_url = os.environ.get('DATABASE_URL', '')
-    if database_url and database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    
-    # Tests use in-memory SQLite (conftest overrides); production requires Supabase
-    if not database_url or 'postgresql' not in database_url.lower():
-        if 'pytest' in __import__('sys').modules:
-            database_url = 'sqlite:///:memory:'  # Tests only
-        else:
+    # Database: Tests use in-memory SQLite; production requires Supabase
+    if 'pytest' in __import__('sys').modules:
+        database_url = 'sqlite:///:memory:'  # Always use SQLite when running pytest
+    else:
+        database_url = os.environ.get('DATABASE_URL', '')
+        if database_url and database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        if not database_url or 'postgresql' not in database_url.lower():
             raise ValueError(
                 "DATABASE_URL must be set to a Supabase PostgreSQL connection string. "
                 "Add it to .env: DATABASE_URL=postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres"
@@ -64,6 +64,8 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+    SESSION_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SECURE = True
 
 
 config = {

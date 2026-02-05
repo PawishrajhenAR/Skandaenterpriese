@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bill Detail - Skanda</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-light">
+    <div class="app-container">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <a class="navbar-brand" href="dashboard.html">
+                    <div class="brand-icon"><i class="bi bi-receipt-cutoff"></i></div>
+                    <span class="brand-text">Skanda</span>
+                </a>
+            </div>
+            <div class="sidebar-content">
+                <ul class="nav flex-column">
+                    <li class="nav-item"><a class="nav-link" href="dashboard.html"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="bills.html"><i class="bi bi-receipt"></i> Bills</a></li>
+                    <li class="nav-item"><a class="nav-link" href="vendors.html"><i class="bi bi-people"></i> Vendors</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar"><span id="user-initial">U</span></div>
+                    <div class="user-details">
+                        <span class="user-name" id="user-name">User</span>
+                        <span class="user-role" id="user-role">-</span>
+                    </div>
+                </div>
+                <a href="#" id="logout-btn" class="logout-btn"><i class="bi bi-box-arrow-right"></i></a>
+            </div>
+        </aside>
+        <main class="app-main">
+            <header class="app-header">
+                <h1 class="page-title">Bill Detail</h1>
+                <a href="bills.html" class="btn btn-secondary btn-sm">Back to Bills</a>
+            </header>
+            <div class="content-wrapper">
+                <div id="loading" class="text-center py-5">Loading...</div>
+                <div id="content" style="display:none;">
+                    <div class="card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-white"><h5 class="mb-0">Bill Information</h5></div>
+                        <div class="card-body">
+                            <dl class="row mb-0">
+                                <dt class="col-sm-3">Bill Number</dt><dd class="col-sm-9" id="bill-number">-</dd>
+                                <dt class="col-sm-3">Vendor</dt><dd class="col-sm-9" id="bill-vendor">-</dd>
+                                <dt class="col-sm-3">Date</dt><dd class="col-sm-9" id="bill-date">-</dd>
+                                <dt class="col-sm-3">Amount</dt><dd class="col-sm-9" id="bill-amount">-</dd>
+                                <dt class="col-sm-3">Status</dt><dd class="col-sm-9" id="bill-status">-</dd>
+                                <dt class="col-sm-3">Payment</dt><dd class="col-sm-9" id="bill-payment">-</dd>
+                                <dt class="col-sm-3">Total Paid</dt><dd class="col-sm-9" id="bill-paid">-</dd>
+                                <dt class="col-sm-3">Remaining</dt><dd class="col-sm-9" id="bill-remaining">-</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (function() {
+            const params = new URLSearchParams(location.search);
+            const id = params.get('id');
+            function fmtCur(n) { return '₹' + parseFloat(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+            function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-IN', {year:'numeric',month:'short',day:'numeric'}) : '-'; }
+            async function init() {
+                if (!id) { document.getElementById('loading').innerHTML = '<div class="alert alert-danger">Bill ID required</div>'; return; }
+                try {
+                    const me = await api.get('auth/me');
+                    document.getElementById('user-name').textContent = me.user.username;
+                    document.getElementById('user-role').textContent = me.user.role;
+                    document.getElementById('user-initial').textContent = (me.user.username || 'U')[0].toUpperCase();
+                    const res = await api.get('bills/' + id);
+                    const b = res.bill;
+                    document.getElementById('bill-number').textContent = b.bill_number || '-';
+                    document.getElementById('bill-vendor').textContent = (b.vendor && b.vendor.name) || '-';
+                    document.getElementById('bill-date').textContent = fmtDate(b.bill_date);
+                    document.getElementById('bill-amount').textContent = fmtCur(b.amount_total);
+                    document.getElementById('bill-status').textContent = b.status || '-';
+                    document.getElementById('bill-payment').textContent = res.payment_status || '-';
+                    document.getElementById('bill-paid').textContent = fmtCur(res.total_paid);
+                    document.getElementById('bill-remaining').textContent = fmtCur(res.remaining);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('content').style.display = 'block';
+                } catch (e) {
+                    if (e.status === 401) window.location.href = 'index.html';
+                    else document.getElementById('loading').innerHTML = '<div class="alert alert-danger">' + (e.message || 'Failed') + '</div>';
+                }
+            }
+            document.getElementById('logout-btn').addEventListener('click', async function(e) { e.preventDefault(); try { await api.post('auth/logout'); } catch (_) {} window.location.href = 'index.html'; });
+            init();
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Render Blueprint for Skanda Backend
+# Deploy: Connect repo and Render will use this config
+services:
+  - type: web
+    name: skandaenterpriese
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false  # Set in dashboard: https://skandaenterpriese.vercel.app

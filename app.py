@@ -1,25 +1,30 @@
-from flask import Flask
+from flask import Flask, jsonify
 from config import config
 from extensions import db, login_manager
 from models import User
 import os
 
-# Import blueprints
-from auth_routes import auth_bp
-from main_routes import main_bp
-from vendor_routes import vendor_bp
-from bill_routes import bill_bp
-from proxy_routes import proxy_bp
-from credit_routes import credit_bp
-from delivery_routes import delivery_bp
-from ocr_routes import ocr_bp
-from report_routes import report_bp
-from permission_routes import permission_bp
+# Import API blueprint (API-only backend for Render)
+from api_routes import api_bp
 
 
 def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
+    
+    # CORS for API (frontend on Vercel)
+    try:
+        from flask_cors import CORS
+        frontend_url = os.environ.get('FRONTEND_URL', '')
+        origins = [u.strip() for u in frontend_url.split(',') if u.strip()] if frontend_url else None
+        # credentials=True requires specific origins; default dev: localhost
+        if not origins:
+            origins = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8080']
+        CORS(app, origins=origins, supports_credentials=True,
+             allow_headers=['Content-Type', 'Authorization'],
+             expose_headers=['Content-Type'])
+    except ImportError:
+        pass  # flask-cors not installed
     
     # Initialize extensions
     db.init_app(app)
@@ -31,32 +36,19 @@ def create_app(config_name='default'):
     
     login_manager.init_app(app)
     
+    # API requests: return 401 JSON instead of redirect
+    @login_manager.unauthorized_handler
+    def unauthorized():
+        from flask import request
+        return jsonify({'error': 'Authentication required'}), 401
+    
     # User loader for Flask-Login
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
     
-    # Make permission checking available in templates
-    @app.context_processor
-    def inject_permissions():
-        from flask_login import current_user
-        def has_permission(permission_code):
-            if current_user.is_authenticated:
-                return current_user.has_permission(permission_code)
-            return False
-        return dict(has_permission=has_permission)
-    
-    # Register blueprints
-    app.register_blueprint(auth_bp, url_prefix='/')
-    app.register_blueprint(main_bp, url_prefix='/')
-    app.register_blueprint(vendor_bp, url_prefix='/vendors')
-    app.register_blueprint(bill_bp, url_prefix='/bills')
-    app.register_blueprint(proxy_bp, url_prefix='/proxy-bills')
-    app.register_blueprint(credit_bp, url_prefix='/credits')
-    app.register_blueprint(delivery_bp, url_prefix='/deliveries')
-    app.register_blueprint(ocr_bp, url_prefix='/ocr')
-    app.register_blueprint(report_bp, url_prefix='/reports')
-    app.register_blueprint(permission_bp, url_prefix='/permissions')
+    # Register API blueprint only (API-only backend)
+    app.register_blueprint(api_bp)
     
     # Create upload/backup directories (use /tmp on Vercel - read-only filesystem)
     try:
@@ -72,7 +64,12 @@ def create_app(config_name='default'):
     except (OSError, PermissionError):
         pass
     
-    # Database health check endpoint
+    # Health endpoints for deployment verification
+    @app.route('/health')
+    def health():
+        """Simple health check for Render/Vercel"""
+        return jsonify({'status': 'ok', 'service': 'skanda-api'}), 200
+    
     @app.route('/health/db')
     def db_health():
         """Check database connection health"""
@@ -103,15 +100,7 @@ def create_app(config_name='default'):
             
             return response, 200
         except Exception as e:
-            return {'status': 'unhealthy', 'error': str(e)}, 500
-    
-    # Serve service worker with correct MIME type
-    @app.route('/service-worker.js')
-    def service_worker():
-        from flask import send_from_directory
-        import os
-        static_folder = app.static_folder or os.path.join(app.root_path, 'static')
-        return send_from_directory(os.path.join(static_folder, 'js'), 'service-worker.js', mimetype='application/javascript')
+            return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
     
     return app
 

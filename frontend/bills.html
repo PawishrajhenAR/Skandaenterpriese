@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bills - Skanda Credit & Billing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-light">
+    <div class="app-container">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <a class="navbar-brand" href="dashboard.html">
+                    <div class="brand-icon"><i class="bi bi-receipt-cutoff"></i></div>
+                    <span class="brand-text">Skanda</span>
+                </a>
+            </div>
+            <div class="sidebar-content">
+                <ul class="nav flex-column">
+                    <li class="nav-item"><a class="nav-link" href="dashboard.html"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                    <li class="nav-section-title mt-4">Bill Management</li>
+                    <li class="nav-item"><a class="nav-link active" href="bills.html"><i class="bi bi-receipt"></i> Bills</a></li>
+                    <li class="nav-item"><a class="nav-link" href="bills-new.html"><i class="bi bi-plus-circle"></i> New Bill</a></li>
+                    <li class="nav-section-title mt-4">Credit Management</li>
+                    <li class="nav-item"><a class="nav-link" href="credits.html"><i class="bi bi-cash-coin"></i> Credits</a></li>
+                    <li class="nav-item"><a class="nav-link" href="reports-outstanding.html"><i class="bi bi-graph-up"></i> Outstanding</a></li>
+                    <li class="nav-section-title mt-4">Delivery Management</li>
+                    <li class="nav-item"><a class="nav-link" href="deliveries.html"><i class="bi bi-truck"></i> Deliveries</a></li>
+                    <li class="nav-section-title mt-4">Reports</li>
+                    <li class="nav-item"><a class="nav-link" href="reports-collection.html"><i class="bi bi-cash-stack"></i> Collection Report</a></li>
+                    <li class="nav-section-title mt-4">Settings</li>
+                    <li class="nav-item"><a class="nav-link" href="vendors.html"><i class="bi bi-people"></i> Vendors</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar"><span id="user-initial">U</span></div>
+                    <div class="user-details">
+                        <span class="user-name" id="user-name">User</span>
+                        <span class="user-role" id="user-role">-</span>
+                    </div>
+                </div>
+                <a href="#" id="logout-btn" class="logout-btn" title="Logout"><i class="bi bi-box-arrow-right"></i></a>
+            </div>
+        </aside>
+        <main class="app-main">
+            <header class="app-header">
+                <button class="sidebar-toggle d-md-none"><i class="bi bi-list"></i></button>
+                <h1 class="page-title">Bills</h1>
+                <a href="bills-new.html" class="btn btn-primary btn-sm">New Bill</a>
+            </header>
+            <div class="content-wrapper">
+                <div id="loading" class="text-center py-5">Loading...</div>
+                <div id="content" style="display:none;">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Bill #</th>
+                                            <th>Vendor</th>
+                                            <th>Date</th>
+                                            <th>Amount</th>
+                                            <th>Status</th>
+                                            <th>Payment</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bills-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        (function() {
+            function fmtCur(n) { return '₹' + parseFloat(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+            function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-IN', {year:'numeric',month:'short',day:'numeric'}) : '-'; }
+            async function init() {
+                try {
+                    const me = await api.get('auth/me');
+                    document.getElementById('user-name').textContent = me.user.username;
+                    document.getElementById('user-role').textContent = me.user.role;
+                    document.getElementById('user-initial').textContent = (me.user.username || 'U')[0].toUpperCase();
+                    const res = await api.get('bills');
+                    const tbody = document.getElementById('bills-tbody');
+                    res.bills.forEach(function(b) {
+                        const tr = document.createElement('tr');
+                        const ps = b.payment_status || 'UNPAID';
+                        const psClass = ps === 'PAID' ? 'bg-success' : ps === 'PARTIAL' ? 'bg-warning' : 'bg-danger';
+                        tr.innerHTML = '<td>' + (b.bill_number || '-') + '</td><td>' + (b.vendor && b.vendor.name || '-') + '</td><td>' + fmtDate(b.bill_date) + '</td><td>' + fmtCur(b.amount_total) + '</td><td><span class="badge ' + (b.status === 'CONFIRMED' ? 'bg-success' : b.status === 'DRAFT' ? 'bg-secondary' : 'bg-danger') + '">' + b.status + '</span></td><td><span class="badge ' + psClass + '">' + ps + '</span></td><td><a href="bill-detail.html?id=' + b.id + '">View</a></td>';
+                        tbody.appendChild(tr);
+                    });
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('content').style.display = 'block';
+                } catch (e) {
+                    if (e.status === 401) window.location.href = 'index.html';
+                    else document.getElementById('loading').innerHTML = '<div class="alert alert-danger">Failed: ' + (e.message || 'Unknown error') + '</div>';
+                }
+            }
+            document.getElementById('logout-btn').addEventListener('click', async function(e) { e.preventDefault(); try { await api.post('auth/logout'); } catch (_) {} window.location.href = 'index.html'; });
+            init();
+        })();
+    </script>
+</body>
+</html>
