@@ -7,20 +7,14 @@
       "config": {
         "maxLambdaSize": "50mb"
       }
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
     }
   ],
   "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/app.py"
-    }
-  ]
+    { "src": "/static/(.*)", "dest": "/static/$1" },
+    { "src": "/(.*)", "dest": "/app.py" }
+  ],
+  "env": {
+    "DEPLOY_MODE": "frontend",
+    "FLASK_ENV": "production"
+  }
 }

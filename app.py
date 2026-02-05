@@ -22,29 +22,42 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     
+    # Determine deployment mode
+    # DEPLOY_MODE=api for Render (API only)
+    # DEPLOY_MODE=frontend for Vercel (templates/UI)
+    # Default: full (both API and frontend)
+    deploy_mode = os.environ.get('DEPLOY_MODE', 'full').lower()
+    
     # CORS for API
     try:
         from flask_cors import CORS
-        CORS(app, supports_credentials=True,
-             allow_headers=['Content-Type', 'Authorization'],
-             expose_headers=['Content-Type'])
+        if deploy_mode == 'api':
+            # API mode: allow frontend origins
+            origins = [
+                'https://skandaenterpriese.vercel.app',
+                'https://skandaenterpriese-pawishrajhenars-projects.vercel.app',
+                'https://skandaenterpriese-git-main-pawishrajhenars-projects.vercel.app',
+                'http://localhost:5000', 'http://127.0.0.1:5000'
+            ]
+            CORS(app, origins=origins, supports_credentials=True,
+                 allow_headers=['Content-Type', 'Authorization'],
+                 expose_headers=['Content-Type'])
+        else:
+            CORS(app, supports_credentials=True)
     except ImportError:
-        pass  # flask-cors not installed
+        pass
     
     # Initialize extensions
     db.init_app(app)
     
-    # Configure SQLAlchemy engine options if specified
     if hasattr(config[config_name], 'SQLALCHEMY_ENGINE_OPTIONS'):
-        engine_options = config[config_name].SQLALCHEMY_ENGINE_OPTIONS
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = config[config_name].SQLALCHEMY_ENGINE_OPTIONS
     
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     login_manager.login_message = 'Please log in to access this page.'
     login_manager.login_message_category = 'info'
     
-    # User loader for Flask-Login
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
@@ -59,20 +72,48 @@ def create_app(config_name='default'):
             return current_user.has_permission(permission_code)
         return dict(has_permission=has_permission)
     
-    # Register all blueprints
-    app.register_blueprint(api_bp)  # API routes under /api
-    app.register_blueprint(main_bp)  # Dashboard at / and /dashboard
-    app.register_blueprint(auth_bp, url_prefix='/auth')  # Login/logout
-    app.register_blueprint(bill_bp, url_prefix='/bills')
-    app.register_blueprint(vendor_bp, url_prefix='/vendors')
-    app.register_blueprint(credit_bp, url_prefix='/credits')
-    app.register_blueprint(delivery_bp, url_prefix='/deliveries')
-    app.register_blueprint(report_bp, url_prefix='/reports')
-    app.register_blueprint(permission_bp, url_prefix='/permissions')
-    app.register_blueprint(ocr_bp, url_prefix='/ocr')
-    app.register_blueprint(proxy_bp, url_prefix='/proxy')
+    # Register blueprints based on deploy mode
+    if deploy_mode == 'api':
+        # Render: API only
+        app.register_blueprint(api_bp)
+        
+        @app.route('/')
+        def root():
+            return jsonify({
+                'message': 'Skanda API Backend',
+                'frontend': 'https://skandaenterpriese.vercel.app',
+                'api': '/api/*',
+                'health': '/health'
+            }), 200
     
-    # Create upload/backup directories (use /tmp on Vercel - read-only filesystem)
+    elif deploy_mode == 'frontend':
+        # Vercel: Frontend (templates) only
+        app.register_blueprint(main_bp)
+        app.register_blueprint(auth_bp, url_prefix='/auth')
+        app.register_blueprint(bill_bp, url_prefix='/bills')
+        app.register_blueprint(vendor_bp, url_prefix='/vendors')
+        app.register_blueprint(credit_bp, url_prefix='/credits')
+        app.register_blueprint(delivery_bp, url_prefix='/deliveries')
+        app.register_blueprint(report_bp, url_prefix='/reports')
+        app.register_blueprint(permission_bp, url_prefix='/permissions')
+        app.register_blueprint(ocr_bp, url_prefix='/ocr')
+        app.register_blueprint(proxy_bp, url_prefix='/proxy')
+    
+    else:
+        # Full mode: both API and frontend (local development)
+        app.register_blueprint(api_bp)
+        app.register_blueprint(main_bp)
+        app.register_blueprint(auth_bp, url_prefix='/auth')
+        app.register_blueprint(bill_bp, url_prefix='/bills')
+        app.register_blueprint(vendor_bp, url_prefix='/vendors')
+        app.register_blueprint(credit_bp, url_prefix='/credits')
+        app.register_blueprint(delivery_bp, url_prefix='/deliveries')
+        app.register_blueprint(report_bp, url_prefix='/reports')
+        app.register_blueprint(permission_bp, url_prefix='/permissions')
+        app.register_blueprint(ocr_bp, url_prefix='/ocr')
+        app.register_blueprint(proxy_bp, url_prefix='/proxy')
+    
+    # Create directories (use /tmp on serverless)
     try:
         upload_folder = app.config['UPLOAD_FOLDER']
         os.makedirs(upload_folder, exist_ok=True)
@@ -86,56 +127,27 @@ def create_app(config_name='default'):
     except (OSError, PermissionError):
         pass
     
-    # Health endpoints for deployment verification
+    # Health endpoints
     @app.route('/health')
     def health():
-        """Simple health check for Render/Vercel"""
-        return jsonify({'status': 'ok', 'service': 'skanda-api'}), 200
+        return jsonify({'status': 'ok', 'mode': deploy_mode}), 200
     
     @app.route('/health/db')
     def db_health():
-        """Check database connection health"""
         try:
             from extensions import db, is_postgresql
             from sqlalchemy import text
             db.session.execute(text('SELECT 1'))
-            
-            database_uri = app.config['SQLALCHEMY_DATABASE_URI']
-            response = {
-                'status': 'healthy',
-                'database_type': 'postgresql' if is_postgresql(database_uri) else 'unknown'
-            }
-            
-            if is_postgresql(database_uri):
-                # Get database name from connection string
-                try:
-                    # Extract database name from URI
-                    if '@' in database_uri:
-                        db_name = database_uri.split('/')[-1].split('?')[0]
-                        response['database_name'] = db_name
-                    # Get connection info
-                    result = db.session.execute(text("SELECT version()"))
-                    version = result.scalar()
-                    response['postgresql_version'] = version.split(',')[0] if version else 'unknown'
-                except:
-                    pass
-            
-            return response, 200
+            return jsonify({'status': 'healthy'}), 200
         except Exception as e:
             return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
     
     return app
 
 
-# Create app instance for Gunicorn (production)
-# Gunicorn will use: gunicorn app:app
+# Create app instance
 app = create_app(os.environ.get('FLASK_ENV', 'production'))
 
 if __name__ == '__main__':
-    # Development server
     app = create_app('development')
-    # NOTE: db.create_all() should only be run via init_db.py
-    # Removing it from here prevents accidental database resets
-    # Run 'python init_db.py' manually to initialize database schema
     app.run(debug=True, host='0.0.0.0', port=5000)
-
