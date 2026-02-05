@@ -125,3 +125,9 @@ The Supabase database needs tables. Two options:
 `render.yaml` includes `preDeployCommand: python run_migrations.py && python seed_supabase.py`. On each deploy, Render runs migrations then seed before starting the app. Ensure `DATABASE_URL` is set in Render.
 
 If pre-deploy is not available on your plan, set it manually in Render Dashboard → Service → **Settings** → **Pre-Deploy Command**: `python run_migrations.py && python seed_supabase.py`
+
+### Selective deploys (frontend vs backend only)
+
+**Vercel** – Builds only when `frontend/` or `vercel.json` change. Backend-only changes skip the build.
+
+**Render** – Deploys only when backend files change. Changes under `frontend/` or `vercel.json` are ignored via `buildFilter.ignoredPaths`.

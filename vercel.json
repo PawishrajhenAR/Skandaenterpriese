@@ -3,6 +3,7 @@
   "outputDirectory": "frontend",
   "installCommand": "",
   "buildCommand": "",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/ vercel.json",
   "rewrites": [
     {"source": "/", "destination": "/index.html"},
     {"source": "/favicon.ico", "destination": "/icons/icon-192x192.png"}
