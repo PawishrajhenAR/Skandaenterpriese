@@ -1,17 +1,19 @@
-# Vercel deployment - excludes easyocr/torch (~500MB) to stay under 250MB limit
-# OCR disabled on Vercel; use local/dev for bill image OCR
 python-dotenv==1.0.0
 Flask==3.0.0
 Flask-WTF==1.2.1
 Flask-Login==0.6.3
 Flask-SQLAlchemy==3.1.1
-Flask-Cors==4.0.0
 SQLAlchemy>=2.0.36
 Werkzeug==3.0.1
+easyocr==1.7.0
 Pillow>=10.4.0
 WTForms==3.1.1
 email-validator==2.1.0
+pytest==7.4.3
+pytest-cov==4.1.0
 reportlab==4.0.7
 openpyxl==3.1.2
+numpy>=1.26.0
 gunicorn==21.2.0
 psycopg2-binary>=2.9.10
+flask-cors>=4.0.0
