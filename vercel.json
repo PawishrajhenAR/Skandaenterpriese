@@ -5,7 +5,8 @@
       "src": "app.py",
       "use": "@vercel/python",
       "config": {
-        "maxLambdaSize": "50mb"
+        "maxLambdaSize": "50mb",
+        "runtime": "python3.12"
       }
     }
   ],
@@ -16,5 +17,6 @@
   "env": {
     "DEPLOY_MODE": "frontend",
     "FLASK_ENV": "production"
-  }
+  },
+  "installCommand": "pip install -r requirements-vercel.txt"
 }
