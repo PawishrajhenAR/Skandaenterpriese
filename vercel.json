@@ -1,19 +1,26 @@
 {
-  "framework": null,
-  "outputDirectory": "frontend",
-  "installCommand": "",
-  "buildCommand": "",
-  "rewrites": [
-    {"source": "/", "destination": "/index.html"},
-    {"source": "/favicon.ico", "destination": "/icons/icon-192x192.png"},
-    {"source": "/dashboard.html", "destination": "/templates/dashboard.html"},
-    {"source": "/bills.html", "destination": "/templates/bills/list.html"},
-    {"source": "/vendors.html", "destination": "/templates/vendors/list.html"}
-  ],
-  "headers": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/js/config.js",
-      "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
+      "src": "app.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    },
+    {
+      "src": "static/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/static/(.*)",
+      "dest": "/static/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/app.py"
     }
   ]
 }

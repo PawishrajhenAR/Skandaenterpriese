@@ -1,33 +1,31 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, redirect, url_for
 from config import config
 from extensions import db, login_manager
-from models import User
+from models import User, Permission
 import os
 
-# Import API blueprint (API-only backend for Render)
+# Import blueprints
 from api_routes import api_bp
+from main_routes import main_bp
+from auth_routes import auth_bp
+from bill_routes import bill_bp
+from vendor_routes import vendor_bp
+from credit_routes import credit_bp
+from delivery_routes import delivery_bp
+from report_routes import report_bp
+from permission_routes import permission_bp
+from ocr_routes import ocr_bp
+from proxy_routes import proxy_bp
 
 
 def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     
-    # CORS for API (frontend on Vercel)
+    # CORS for API
     try:
         from flask_cors import CORS
-        frontend_url = os.environ.get('FRONTEND_URL', '')
-        origins = [u.strip() for u in frontend_url.split(',') if u.strip()] if frontend_url else []
-        # Include Vercel production URL by default so CORS works even if FRONTEND_URL not set
-        default_origins = [
-            'https://skandaenterpriese.vercel.app',
-            'https://skandaenterpriese-pawishrajhenars-projects.vercel.app',
-            'https://skandaenterpriese-git-main-pawishrajhenars-projects.vercel.app',
-            'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8080'
-        ]
-        for o in default_origins:
-            if o not in origins:
-                origins.append(o)
-        CORS(app, origins=origins, supports_credentials=True,
+        CORS(app, supports_credentials=True,
              allow_headers=['Content-Type', 'Authorization'],
              expose_headers=['Content-Type'])
     except ImportError:
@@ -42,20 +40,37 @@ def create_app(config_name='default'):
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
     
     login_manager.init_app(app)
-    
-    # API requests: return 401 JSON instead of redirect
-    @login_manager.unauthorized_handler
-    def unauthorized():
-        from flask import request
-        return jsonify({'error': 'Authentication required'}), 401
+    login_manager.login_view = 'auth.login'
+    login_manager.login_message = 'Please log in to access this page.'
+    login_manager.login_message_category = 'info'
     
     # User loader for Flask-Login
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
     
-    # Register API blueprint only (API-only backend)
-    app.register_blueprint(api_bp)
+    # Template context processor for permissions
+    @app.context_processor
+    def utility_processor():
+        def has_permission(permission_code):
+            from flask_login import current_user
+            if not current_user.is_authenticated:
+                return False
+            return current_user.has_permission(permission_code)
+        return dict(has_permission=has_permission)
+    
+    # Register all blueprints
+    app.register_blueprint(api_bp)  # API routes under /api
+    app.register_blueprint(main_bp)  # Dashboard at / and /dashboard
+    app.register_blueprint(auth_bp, url_prefix='/auth')  # Login/logout
+    app.register_blueprint(bill_bp, url_prefix='/bills')
+    app.register_blueprint(vendor_bp, url_prefix='/vendors')
+    app.register_blueprint(credit_bp, url_prefix='/credits')
+    app.register_blueprint(delivery_bp, url_prefix='/deliveries')
+    app.register_blueprint(report_bp, url_prefix='/reports')
+    app.register_blueprint(permission_bp, url_prefix='/permissions')
+    app.register_blueprint(ocr_bp, url_prefix='/ocr')
+    app.register_blueprint(proxy_bp, url_prefix='/proxy')
     
     # Create upload/backup directories (use /tmp on Vercel - read-only filesystem)
     try:
@@ -70,15 +85,6 @@ def create_app(config_name='default'):
             os.makedirs(backup_folder, exist_ok=True)
     except (OSError, PermissionError):
         pass
-    
-    # Root: API-only backend - direct users to frontend
-    @app.route('/')
-    def root():
-        return jsonify({
-            'message': 'Skanda API. Use the frontend at https://skandaenterpriese.vercel.app',
-            'api': '/api/*',
-            'health': '/health'
-        }), 200
     
     # Health endpoints for deployment verification
     @app.route('/health')

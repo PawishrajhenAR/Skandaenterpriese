@@ -14,3 +14,6 @@ backups
 .env.*
 CustomerMasterDetails.csv
 *.csv
+run_tests.ps1
+run.ps1
+start.sh
