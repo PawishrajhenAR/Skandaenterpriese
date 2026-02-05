@@ -1,6 +1,8 @@
 {
   "framework": null,
   "outputDirectory": "frontend",
+  "installCommand": "",
+  "buildCommand": "",
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
     { "source": "/favicon.ico", "destination": "/icons/icon-192x192.png" }
