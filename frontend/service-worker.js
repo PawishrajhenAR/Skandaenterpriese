@@ -1,7 +1,7 @@
 // Service Worker for Skanda - static frontend paths
-const CACHE_NAME = 'skanda-v1.0.0';
-const STATIC_CACHE_NAME = 'skanda-static-v1.0.0';
-const DYNAMIC_CACHE_NAME = 'skanda-dynamic-v1.0.0';
+const CACHE_NAME = 'skanda-v1.0.1';
+const STATIC_CACHE_NAME = 'skanda-static-v1.0.1';
+const DYNAMIC_CACHE_NAME = 'skanda-dynamic-v1.0.1';
 
 const STATIC_ASSETS = [
   '/',

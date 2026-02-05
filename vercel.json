@@ -4,7 +4,15 @@
   "installCommand": "",
   "buildCommand": "",
   "rewrites": [
-    { "source": "/", "destination": "/index.html" },
-    { "source": "/favicon.ico", "destination": "/icons/icon-192x192.png" }
+    {"source": "/", "destination": "/index.html"},
+    {"source": "/favicon.ico", "destination": "/icons/icon-192x192.png"}
+  ],
+  "headers": [
+    {
+      "source": "/js/config.js",
+      "headers": [
+        {"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}
+      ]
+    }
   ]
 }
