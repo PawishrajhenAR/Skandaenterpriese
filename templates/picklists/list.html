@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Picklists - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-clipboard-check"></i> Picklists</h1>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-list-ul"></i> Picklists ({{ deliveries|length }} found)
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if deliveries %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Picklist Number</th>
+                        <th>Delivery Person</th>
+                        <th>Delivery Date</th>
+                        <th>Bill / Proxy</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for delivery in deliveries %}
+                    <tr>
+                        <td>PL-{{ delivery.id }}</td>
+                        <td>{{ delivery.delivery_user.username if delivery.delivery_user else '—' }}</td>
+                        <td>{{ delivery.delivery_date.strftime('%Y-%m-%d') if delivery.delivery_date else '—' }}</td>
+                        <td>
+                            {% if delivery.bill %}
+                                <a href="{{ url_for('bill.detail', id=delivery.bill_id) }}" class="text-decoration-none">Bill {{ delivery.bill.bill_number }}</a>
+                            {% elif delivery.proxy_bill %}
+                                <a href="{{ url_for('proxy.detail', id=delivery.proxy_bill_id) }}" class="text-decoration-none">Proxy {{ delivery.proxy_bill.proxy_number }}</a>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('picklist.detail', id=delivery.id) }}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-eye"></i> View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state text-center py-5">
+            <i class="bi bi-clipboard-x display-4 text-muted"></i>
+            <p class="text-muted mt-3 mb-0">No picklists found. Create delivery orders linked to a bill or proxy bill to see them here.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

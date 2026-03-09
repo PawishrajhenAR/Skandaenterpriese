@@ -29,6 +29,9 @@ class Config:
     if not database_url or 'postgresql' not in database_url.lower():
         if 'pytest' in __import__('sys').modules:
             database_url = 'sqlite:///:memory:'  # Tests only
+        elif os.environ.get('FLASK_ENV') == 'development' or os.environ.get('USE_SQLITE') == '1':
+            _db_path = (basedir / "local.db").resolve().as_posix()
+            database_url = f'sqlite:///{_db_path}'
         else:
             raise ValueError(
                 "DATABASE_URL must be set to a Supabase PostgreSQL connection string. "

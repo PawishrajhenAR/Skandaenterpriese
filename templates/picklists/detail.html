@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Picklist {{ picklist_number }} - Skanda Credit & Billing{% endblock %}
+
+{% block extra_head %}
+<style>
+  .picklist-doc { max-width: 900px; }
+  .picklist-doc .table { border-collapse: collapse; }
+  .picklist-doc .table th,
+  .picklist-doc .table td { border: 1px solid #dee2e6; padding: 0.5rem 0.75rem; }
+  .picklist-doc .table th { background-color: #f8f9fa; font-weight: 600; }
+  .picklist-doc .table .text-end { text-align: right; }
+  @media print {
+    body * { visibility: hidden; }
+    .picklist-print-area,
+    .picklist-print-area * { visibility: visible; }
+    .picklist-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="no-print d-flex justify-content-between align-items-center mb-4">
+  <h1><i class="bi bi-clipboard-check"></i> Picklist {{ picklist_number }}</h1>
+  <div>
+    <a href="{{ url_for('picklist.list') }}" class="btn btn-secondary me-2"><i class="bi bi-arrow-left"></i> Back to List</a>
+    <a href="{{ url_for('picklist.detail_pdf', id=delivery_id) }}" class="btn btn-outline-danger me-2" target="_blank"><i class="bi bi-file-pdf"></i> Download PDF</a>
+    <button type="button" class="btn btn-primary" onclick="window.print();">
+      <i class="bi bi-printer"></i> Print
+    </button>
+  </div>
+</div>
+
+<div class="picklist-print-area picklist-doc">
+  <div class="card border shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <p class="mb-1"><strong>Picklist Number</strong></p>
+          <p class="mb-0">{{ picklist_number }}</p>
+        </div>
+        <div class="col-md-4">
+          <p class="mb-1"><strong>Delivery Person</strong></p>
+          <p class="mb-0">{{ delivery_person }}</p>
+        </div>
+        <div class="col-md-4">
+          <p class="mb-1"><strong>Delivery Date</strong></p>
+          <p class="mb-0">{{ delivery_date }}</p>
+        </div>
+      </div>
+
+      <h6 class="mb-2">Items</h6>
+      <div class="table-responsive">
+        <table class="table table-bordered mb-4">
+          <thead>
+            <tr>
+              <th>Cat</th>
+              <th>Item Name</th>
+              <th class="text-end">MRP</th>
+              <th class="text-end">Value</th>
+              <th>B.UOM</th>
+              <th>CFC</th>
+              <th>PAC</th>
+              <th class="text-end">FR Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.cat or '—' }}</td>
+              <td>{{ item.item_name }}</td>
+              <td class="text-end">{{ item.mrp|currency }}</td>
+              <td class="text-end">{{ item.value|currency }}</td>
+              <td>{{ item.b_uom or '—' }}</td>
+              <td>{{ item.cfc or '—' }}</td>
+              <td>{{ item.pac or '—' }}</td>
+              <td class="text-end">{{ item.fr_qty }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="table-light fw-bold">
+              <td colspan="3" class="text-end">Grand Total</td>
+              <td class="text-end">{{ grand_total|currency }}</td>
+              <td colspan="4"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h6 class="mb-2">Invoice Details</h6>
+      <div class="table-responsive">
+        <table class="table table-bordered mb-4">
+          <thead>
+            <tr>
+              <th>Invoice No</th>
+              <th>Inv Date</th>
+              <th>Customer Code</th>
+              <th>Customer Name</th>
+              <th>Beat</th>
+              <th>P-Mode</th>
+              <th class="text-end">InvVal</th>
+              <th class="text-end">RecAmt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in invoice_rows %}
+            <tr>
+              <td>{{ row.invoice_no }}</td>
+              <td>{{ row.inv_date }}</td>
+              <td>{{ row.customer_code or '—' }}</td>
+              <td>{{ row.customer_name }}</td>
+              <td>{{ row.beat or '—' }}</td>
+              <td>{{ row.p_mode or '—' }}</td>
+              <td class="text-end">{{ row.inv_val|currency }}</td>
+              <td class="text-end">{{ row.rec_amt|currency }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6 class="mb-2">Salesman Summary</h6>
+      <div class="table-responsive">
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>Salesman Name</th>
+              <th class="text-end">Invoice Count</th>
+              <th class="text-end">Net Amount</th>
+              <th class="text-end">Received Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ salesman_summary.salesman_name }}</td>
+              <td class="text-end">{{ salesman_summary.invoice_count }}</td>
+              <td class="text-end">{{ salesman_summary.net_amount|currency }}</td>
+              <td class="text-end">{{ salesman_summary.received_amount|currency }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

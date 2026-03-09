@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Picklist - Skanda Credit & Billing{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h1><i class="bi bi-upload"></i> Upload Picklist</h1>
+    <a href="{{ url_for('picklist.list') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Picklists</a>
+</div>
+
+<p class="text-muted mb-4">Upload a picklist as CSV or an image (OCR) to create or update delivery orders and assign delivery person or salesman.</p>
+
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> Upload CSV</h5>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">CSV must have columns: <strong>Invoice No</strong>, <strong>Delivery Person</strong>, <strong>Delivery Date</strong>, <strong>Delivery Address</strong>. Optional: <strong>Salesman</strong>.</p>
+                <form method="POST" enctype="multipart/form-data" id="formCsv">
+                    <input type="hidden" name="upload_type" value="csv">
+                    <div class="mb-3">
+                        <label for="fileCsv" class="form-label">Select CSV file</label>
+                        <input type="file" class="form-control" name="file" id="fileCsv" accept=".csv" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Upload CSV</button>
+                </form>
+                <hr>
+                <a href="{{ url_for('static', filename='samples/picklist_upload_sample.csv') }}" class="btn btn-sm btn-outline-secondary" download>
+                    <i class="bi bi-download"></i> Download sample CSV
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-image"></i> Upload image (OCR)</h5>
+            </div>
+            <div class="card-body">
+                {% if ocr_available %}
+                <p class="small text-muted">Upload a photo or scan of a picklist. Text will be extracted and used to create/update deliveries. Best results with clear text and labels like "Delivery Person:", "Invoice No:", "Date:", "Address:".</p>
+                <form method="POST" enctype="multipart/form-data" id="formOcr">
+                    <input type="hidden" name="upload_type" value="ocr">
+                    <div class="mb-3">
+                        <label for="fileOcr" class="form-label">Select image or PDF</label>
+                        <input type="file" class="form-control" name="file" id="fileOcr" accept=".png,.jpg,.jpeg,.pdf">
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Upload & process OCR</button>
+                </form>
+                {% else %}
+                <div class="alert alert-warning mb-0">
+                    OCR is not available in this environment. Please use CSV upload.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if upload_result %}
+<div class="card border-success">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Upload result</h5>
+    </div>
+    <div class="card-body">
+        <p class="mb-1"><strong>Created:</strong> {{ upload_result.created }}</p>
+        <p class="mb-1"><strong>Updated:</strong> {{ upload_result.updated }}</p>
+        <p class="mb-1"><strong>Skipped:</strong> {{ upload_result.skipped|length }}</p>
+        {% if upload_result.skipped %}
+        <details class="mt-3">
+            <summary class="text-muted small">Skipped rows (reason)</summary>
+            <ul class="small mt-2 mb-0">
+                {% for row, reason in upload_result.skipped[:20] %}
+                <li>{{ reason }}</li>
+                {% endfor %}
+                {% if upload_result.skipped|length > 20 %}
+                <li class="text-muted">... and {{ upload_result.skipped|length - 20 }} more</li>
+                {% endif %}
+            </ul>
+        </details>
+        {% endif %}
+        <a href="{{ url_for('picklist.list') }}" class="btn btn-primary mt-3">View Picklists</a>
+    </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var formCsv = document.getElementById('formCsv');
+    var formOcr = document.getElementById('formOcr');
+    if (formCsv) {
+        formCsv.addEventListener('submit', function() {
+            var input = document.getElementById('fileCsv');
+            if (!input.files || !input.files[0]) {
+                alert('Please select a CSV file.');
+                return false;
+            }
+        });
+    }
+    if (formOcr) {
+        formOcr.addEventListener('submit', function() {
+            var input = document.getElementById('fileOcr');
+            if (!input.files || !input.files[0]) {
+                alert('Please select an image or PDF file.');
+                return false;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

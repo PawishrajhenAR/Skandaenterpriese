@@ -601,6 +601,106 @@ def generate_deliveries_pdf(stats, delivery_orders=None):
     return buffer
 
 
+def generate_picklist_pdf(payload):
+    """Generate PDF for a single picklist (invoice-style layout)."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            topMargin=0.75*inch,
+                            bottomMargin=0.75*inch,
+                            leftMargin=0.5*inch,
+                            rightMargin=0.5*inch)
+    story = []
+    styles = getSampleStyleSheet()
+    normal_style = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontSize=9, fontName='Helvetica')
+    right_style = ParagraphStyle('RightStyle', parent=normal_style, alignment=TA_RIGHT)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, spaceAfter=8, fontName='Helvetica-Bold')
+
+    # Header
+    story.append(Paragraph(f"PICKLIST: {payload['picklist_number']}", heading_style))
+    story.append(Paragraph(f"Delivery Person: {payload['delivery_person']}  |  Delivery Date: {payload['delivery_date']}", normal_style))
+    story.append(Spacer(1, 0.2*inch))
+
+    # Items table
+    story.append(Paragraph("Items", heading_style))
+    items_data = [['Cat', 'Item Name', 'MRP', 'Value', 'B.UOM', 'CFC', 'PAC', 'FR Qty']]
+    for it in payload['items']:
+        items_data.append([
+            it.get('cat') or '—',
+            it.get('item_name') or '—',
+            format_currency_pdf(it.get('mrp', 0)),
+            format_currency_pdf(it.get('value', 0)),
+            it.get('b_uom') or '—',
+            it.get('cfc') or '—',
+            it.get('pac') or '—',
+            str(it.get('fr_qty', '')),
+        ])
+    items_data.append(['', 'Grand Total', '', format_currency_pdf(payload.get('grand_total', 0)), '', '', '', ''])
+    col_widths = [0.4*inch, 2*inch, 0.7*inch, 0.8*inch, 0.5*inch, 0.4*inch, 0.4*inch, 0.5*inch]
+    items_table = Table(items_data, colWidths=col_widths)
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7')),
+        ('FONTSIZE', (0, 1), (-1, -2), 8),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ecf0f1')),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
+    story.append(items_table)
+    story.append(Spacer(1, 0.25*inch))
+
+    # Invoice details table
+    story.append(Paragraph("Invoice Details", heading_style))
+    inv_data = [['Invoice No', 'Inv Date', 'Customer Code', 'Customer Name', 'Beat', 'P-Mode', 'InvVal', 'RecAmt']]
+    for row in payload.get('invoice_rows', []):
+        inv_data.append([
+            row.get('invoice_no', ''),
+            row.get('inv_date', ''),
+            row.get('customer_code', '') or '—',
+            row.get('customer_name', '') or '—',
+            row.get('beat', '') or '—',
+            row.get('p_mode', '') or '—',
+            format_currency_pdf(row.get('inv_val', 0)),
+            format_currency_pdf(row.get('rec_amt', 0)),
+        ])
+    inv_col_widths = [0.9*inch, 0.7*inch, 1*inch, 1.5*inch, 0.5*inch, 0.5*inch, 0.7*inch, 0.7*inch]
+    inv_table = Table(inv_data, colWidths=inv_col_widths)
+    inv_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7')),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+    ]))
+    story.append(inv_table)
+    story.append(Spacer(1, 0.25*inch))
+
+    # Salesman summary
+    story.append(Paragraph("Salesman Summary", heading_style))
+    ss = payload.get('salesman_summary', {})
+    sum_data = [
+        ['Salesman Name', 'Invoice Count', 'Net Amount', 'Received Amount'],
+        [ss.get('salesman_name', '—'), str(ss.get('invoice_count', 0)),
+         format_currency_pdf(ss.get('net_amount', 0)), format_currency_pdf(ss.get('received_amount', 0))],
+    ]
+    sum_table = Table(sum_data, colWidths=[2*inch, 1*inch, 1.2*inch, 1.2*inch])
+    sum_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7')),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    story.append(sum_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 def generate_outstanding_excel(results):
     """Generate Excel for Outstanding Report"""
     wb = Workbook()

@@ -15,6 +15,7 @@ from delivery_routes import delivery_bp
 from ocr_routes import ocr_bp
 from report_routes import report_bp
 from permission_routes import permission_bp
+from picklist_routes import picklist_bp
 
 
 def create_app(config_name='default'):
@@ -36,6 +37,16 @@ def create_app(config_name='default'):
     def load_user(user_id):
         return User.query.get(int(user_id))
     
+    # Currency filter for templates (e.g. picklist, reports)
+    @app.template_filter('currency')
+    def currency_filter(value):
+        if value is None:
+            return '—'
+        try:
+            return f'₹{float(value):,.2f}'
+        except (TypeError, ValueError):
+            return '—'
+
     # Make permission checking available in templates
     @app.context_processor
     def inject_permissions():
@@ -57,6 +68,7 @@ def create_app(config_name='default'):
     app.register_blueprint(ocr_bp, url_prefix='/ocr')
     app.register_blueprint(report_bp, url_prefix='/reports')
     app.register_blueprint(permission_bp, url_prefix='/permissions')
+    app.register_blueprint(picklist_bp, url_prefix='/picklists')
     
     # Create upload/backup directories (use /tmp on Vercel - read-only filesystem)
     try:

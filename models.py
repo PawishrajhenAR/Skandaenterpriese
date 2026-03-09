@@ -33,7 +33,12 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    delivery_orders = db.relationship('DeliveryOrder', backref='delivery_user', lazy=True)
+    delivery_orders = db.relationship(
+        'DeliveryOrder',
+        foreign_keys='[DeliveryOrder.delivery_user_id]',
+        backref=db.backref('delivery_user', lazy=True),
+        lazy=True,
+    )
     audit_logs = db.relationship('AuditLog', backref='user', lazy=True)
     
     def set_password(self, password):
@@ -199,6 +204,9 @@ class DeliveryOrder(db.Model):
     delivery_date = db.Column(db.Date, nullable=False)
     status = db.Column(db.String(20), default='PENDING')  # PENDING, IN_TRANSIT, DELIVERED, CANCELLED
     remarks = db.Column(db.Text)
+    salesman_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    salesman = db.relationship('User', foreign_keys=[salesman_id], backref='salesman_deliveries', lazy=True)
 
 
 class OCRJob(db.Model):

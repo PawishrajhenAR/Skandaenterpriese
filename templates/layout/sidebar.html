@@ -49,6 +49,18 @@
         </a>
     </li>
     {% endif %}
+    <li class="nav-item">
+        <a class="nav-link {{ 'active' if request.endpoint and 'picklist' in (request.endpoint or '') and request.endpoint != 'picklist.upload' }}" href="{{ url_for('picklist.list') }}">
+            <i class="bi bi-clipboard-check"></i> Picklists
+        </a>
+    </li>
+    {% if has_permission('create_delivery') %}
+    <li class="nav-item">
+        <a class="nav-link {{ 'active' if request.endpoint == 'picklist.upload' }}" href="{{ url_for('picklist.upload') }}">
+            <i class="bi bi-upload"></i> Upload Picklist
+        </a>
+    </li>
+    {% endif %}
     {% endif %}
     
     {% if has_permission('view_reports') %}
