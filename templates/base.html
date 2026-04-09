@@ -85,7 +85,7 @@
                         {% with messages = get_flashed_messages(with_categories=true) %}
                             {% if messages %}
                                 {% for category, message in messages %}
-                                    <div class="toast show align-items-center text-white bg-{{ 'danger' if category == 'error' else category }} border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="4000">
+                                    <div class="toast fade align-items-center text-white bg-{{ 'danger' if category == 'error' else category }} border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true">
                                         <div class="d-flex">
                                             <div class="toast-body">
                                                 <i class="bi bi-{% if category == 'success' %}check-circle{% elif category == 'error' or category == 'danger' %}exclamation-triangle{% elif category == 'warning' %}exclamation-circle{% else %}info-circle{% endif %}-fill me-2"></i>

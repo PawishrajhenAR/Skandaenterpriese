@@ -1,18 +1,30 @@
 // Main JavaScript for Skanda Credit & Billing System
 
 document.addEventListener('DOMContentLoaded', function() {
+    const TOAST_MIN_DELAY_MS = 5000;
+    const TOAST_MAX_DELAY_MS = 12000;
+
+    function getReadableToastDelay(messageText) {
+        const text = (messageText || '').trim();
+        const words = text ? text.split(/\s+/).length : 0;
+        // ~300 words/min reading speed + base time buffer.
+        const estimatedMs = 2500 + Math.round((words / 300) * 60000);
+        return Math.max(TOAST_MIN_DELAY_MS, Math.min(TOAST_MAX_DELAY_MS, estimatedMs));
+    }
+
     // Initialize toast notifications
     const toastElements = document.querySelectorAll('.toast');
     toastElements.forEach(function(toastEl) {
-        // Ensure each toast only shows once
-        if (toastEl.classList.contains('showing') || toastEl.classList.contains('show')) {
-            return;
-        }
+        const bodyText = toastEl.querySelector('.toast-body')?.innerText || '';
+        const delay = getReadableToastDelay(bodyText);
         
         const toast = new bootstrap.Toast(toastEl, {
             autohide: true,
-            delay: 4000
+            delay: delay
         });
+
+        toastEl.setAttribute('data-bs-delay', String(delay));
+        toastEl.setAttribute('data-bs-autohide', 'true');
         
         // Show toast with smooth animation
         setTimeout(function() {
@@ -377,7 +389,7 @@ window.addEventListener('online', () => {
         notification.style.zIndex = '9999';
         notification.innerHTML = '<i class="bi bi-wifi me-2"></i>You are back online<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
         document.body.appendChild(notification);
-        setTimeout(() => notification.remove(), 3000);
+        setTimeout(() => notification.remove(), 8000);
     }
 });
 
@@ -392,16 +404,25 @@ window.addEventListener('offline', () => {
         notification.style.zIndex = '9999';
         notification.innerHTML = '<i class="bi bi-wifi-off me-2"></i>You are offline. Some features may be limited.<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
         document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 8000);
     }
 });
 
 // Helper function to show toast (if not already defined)
 if (typeof showToast === 'undefined') {
     window.showToast = function(message, type = 'info') {
+        const TOAST_MIN_DELAY_MS = 5000;
+        const TOAST_MAX_DELAY_MS = 12000;
+        const words = (message || '').trim().split(/\s+/).filter(Boolean).length;
+        const delay = Math.max(TOAST_MIN_DELAY_MS, Math.min(TOAST_MAX_DELAY_MS, 2500 + Math.round((words / 300) * 60000)));
         const toastContainer = document.querySelector('.toast-container') || document.body;
         const toast = document.createElement('div');
         toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type} border-0`;
         toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.setAttribute('aria-atomic', 'true');
+        toast.setAttribute('data-bs-autohide', 'true');
+        toast.setAttribute('data-bs-delay', String(delay));
         toast.innerHTML = `
             <div class="d-flex">
                 <div class="toast-body">
@@ -412,7 +433,7 @@ if (typeof showToast === 'undefined') {
             </div>
         `;
         toastContainer.appendChild(toast);
-        const bsToast = new bootstrap.Toast(toast, { autohide: true, delay: 4000 });
+        const bsToast = new bootstrap.Toast(toast, { autohide: true, delay: delay });
         bsToast.show();
         toast.addEventListener('hidden.bs.toast', () => toast.remove());
     };
