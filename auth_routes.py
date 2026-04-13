@@ -4,6 +4,7 @@ from functools import wraps
 from models import User, Tenant, Permission, RolePermission
 from forms import LoginForm
 from extensions import db
+from sqlalchemy.exc import ProgrammingError, OperationalError
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -66,7 +67,15 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
+        try:
+            user = User.query.filter_by(username=form.username.data).first()
+        except (ProgrammingError, OperationalError):
+            db.session.rollback()
+            flash(
+                'Database schema is not initialized yet. Please run init_db.py and seed.py, then try again.',
+                'danger'
+            )
+            return render_template('auth/login.html', form=form)
         if user and user.check_password(form.password.data) and user.is_active:
             login_user(user)
             next_page = request.args.get('next')
