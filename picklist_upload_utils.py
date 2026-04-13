@@ -1,48 +1,34 @@
 """
-Picklist upload: parse CSV or OCR text and apply rows to create/update DeliveryOrders.
+Picklist upload: CSV invoice-table imports → picklist_import_rows; OCR → DeliveryOrders (legacy).
 """
 import csv
 import re
-from io import StringIO
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from pathlib import Path
 
-# Column header aliases: canonical name -> accepted names
-PICKLIST_CSV_COLUMNS = {
-    "invoice_no": [
-        "Invoice No",
-        "Invoice No.",
-        "Bill Number",
-        "Proxy Number",
-        "invoice_no",
-        "invoice no",
-    ],
-    "delivery_person": [
-        "Delivery Person",
-        "DeliveryPerson",
-        "Delivery_User",
-        "Delivery User",
-        "delivery_person",
-        "delivery person",
-    ],
-    "delivery_date": [
-        "Delivery Date",
-        "delivery_date",
-        "delivery date",
-        "Date",
-    ],
-    "delivery_address": [
-        "Delivery Address",
-        "Address",
-        "delivery_address",
-        "delivery address",
-    ],
-    "salesman": [
-        "Salesman",
-        "Salesman Name",
-        "salesman",
-        "salesman name",
-    ],
+# --- CSV invoice-table format (distributor export) ---
+# Headers: Invoice No, Inv Date, Customer, Customer Name, Beat, P-Mode, InvVal, RecAmt
+PICKLIST_IMPORT_CSV_KEYS = (
+    "invoice_no",
+    "inv_date",
+    "customer_code",
+    "customer_name",
+    "beat",
+    "p_mode",
+    "inv_val",
+    "rec_amt",
+)
+
+PICKLIST_IMPORT_ALIASES = {
+    "invoice_no": ("invoice no", "invoice no."),
+    "inv_date": ("inv date", "invoice date"),
+    "customer_code": ("customer", "customer code"),
+    "customer_name": ("customer name",),
+    "beat": ("beat",),
+    "p_mode": ("p mode", "p-mode", "payment mode", "pmode"),
+    "inv_val": ("invval", "inv val", "invoice value", "inv value"),
+    "rec_amt": ("recamt", "rec amt", "received amount", "rec amount"),
 }
 
 
@@ -59,15 +45,34 @@ def _normalize_token(s):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _find_column_index(headers, canonical_key):
-    names = PICKLIST_CSV_COLUMNS.get(canonical_key, [])
-    normalized_headers = [_normalize_token(h) for h in headers]
-    for alias in names:
-        alias_clean = _normalize_token(alias)
-        for i, h in enumerate(normalized_headers):
-            if h == alias_clean:
-                return i
-    return -1
+def _find_import_column_indices(header_row):
+    """Map canonical keys to column indices. Returns dict or None if incomplete."""
+    normalized_headers = [_normalize_token(h) for h in header_row]
+    indices = {}
+    for key in PICKLIST_IMPORT_CSV_KEYS:
+        aliases = PICKLIST_IMPORT_ALIASES.get(key, ())
+        found = -1
+        for alias in aliases:
+            ac = _normalize_token(alias)
+            for i, h in enumerate(normalized_headers):
+                if h == ac:
+                    found = i
+                    break
+            if found >= 0:
+                break
+        if found < 0:
+            return None
+        indices[key] = found
+    # Disambiguate: "customer" must not match "customer name" column — already separate aliases
+    return indices
+
+
+def _score_import_header_row(header_row):
+    """How many import columns are recognized (for auto-detecting header line)."""
+    idx = _find_import_column_indices(header_row)
+    if idx:
+        return len(idx)
+    return 0
 
 
 def _parse_date(s):
@@ -83,11 +88,50 @@ def _parse_date(s):
     return None
 
 
+def _parse_decimal(s):
+    if s is None:
+        return None
+    t = str(s).strip()
+    if not t:
+        return None
+    t = t.replace(",", "")
+    try:
+        return Decimal(t)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _should_skip_import_row(invoice_raw):
+    """Skip summary / separator / header noise rows."""
+    inv = _normalize_header(invoice_raw)
+    if not inv:
+        return True
+    key = _normalize_token(inv)
+    if not key:
+        return True
+    if key in ("invoice no", "inv date", "customer name", "grand total", "picklist", "page"):
+        return True
+    if "grandtotal" in key.replace(" ", "") or key.startswith("grand total"):
+        return True
+    if "salesman" in key:
+        return True
+    if re.fullmatch(r"[-_\s]+", inv):
+        return True
+    if re.match(r"^-{3,}$", inv.strip()):
+        return True
+    return False
+
+
 def parse_picklist_csv(filepath):
     """
-    Parse a picklist CSV file. Returns list of dicts with keys:
-    invoice_no, delivery_person, delivery_date, delivery_address, salesman (optional).
-    Raises ValueError if required columns are missing or file cannot be read.
+    Parse picklist CSV (invoice table export).
+
+    Required header columns (labels matched case-insensitively, trimmed):
+    Invoice No, Inv Date, Customer, Customer Name, Beat, P-Mode, InvVal, RecAmt
+
+    Returns list of dicts:
+      invoice_no, delivery_date, customer_code, customer_name, beat,
+      amount, received_amount, payment_mode
     """
     filepath = Path(filepath)
     if not filepath.exists():
@@ -108,134 +152,69 @@ def parse_picklist_csv(filepath):
     if not csv_data or len(csv_data) < 2:
         raise ValueError("CSV file is empty or has no data rows")
 
-    # Some picklist exports include metadata rows first and headers later.
-    # Find the best header row by required-column coverage.
     best_header_idx = -1
     best_score = -1
     best_indices = None
-    for row_idx, header_row in enumerate(csv_data):
-        idx_inv_candidate = _find_column_index(header_row, "invoice_no")
-        idx_person_candidate = _find_column_index(header_row, "delivery_person")
-        idx_date_candidate = _find_column_index(header_row, "delivery_date")
-        idx_address_candidate = _find_column_index(header_row, "delivery_address")
-        score = 0
-        if idx_inv_candidate >= 0:
-            score += 2
-        if idx_person_candidate >= 0:
-            score += 1
-        if idx_date_candidate >= 0:
-            score += 1
-        if idx_address_candidate >= 0:
-            score += 1
+    for row_idx, row in enumerate(csv_data):
+        score = _score_import_header_row(row)
         if score > best_score:
             best_score = score
             best_header_idx = row_idx
-            best_indices = (
-                idx_inv_candidate,
-                idx_person_candidate,
-                idx_date_candidate,
-                idx_address_candidate,
-                _find_column_index(header_row, "salesman"),
-            )
+            best_indices = _find_import_column_indices(row)
 
-    if best_indices is None:
-        raise ValueError("Could not detect a valid CSV header row")
+    if not best_indices or best_score < len(PICKLIST_IMPORT_CSV_KEYS):
+        raise ValueError(
+            "Missing required columns. Expected: Invoice No, Inv Date, Customer, Customer Name, "
+            "Beat, P-Mode, InvVal, RecAmt"
+        )
 
-    headers = csv_data[best_header_idx]
+    idx = best_indices
     data_rows = csv_data[best_header_idx + 1 :]
-    idx_inv, idx_person, idx_date, idx_address, idx_salesman = best_indices
-    idx_customer_name = -1
-    normalized_headers = [_normalize_token(h) for h in headers]
-    for i, h in enumerate(normalized_headers):
-        if h in {"customer name", "customer"}:
-            idx_customer_name = i
-            break
 
-    # Metadata fallback values (from lines like "Delivery Person :,,,John")
-    metadata_delivery_person = None
-    metadata_delivery_date = None
-    metadata_delivery_address = None
-    for meta_row in csv_data[: best_header_idx if best_header_idx > 0 else 0]:
-        non_empty_cells = [_normalize_header(c) for c in meta_row if _normalize_header(c)]
-        if not non_empty_cells:
-            continue
-        row_text = " ".join(non_empty_cells)
-        key_text = _normalize_token(row_text)
-        last_value = non_empty_cells[-1]
-        if ("delivery person" in key_text or "delivery user" in key_text) and last_value:
-            metadata_delivery_person = last_value
-        elif "delivery date" in key_text and last_value:
-            metadata_delivery_date = last_value
-        elif "delivery address" in key_text and last_value:
-            metadata_delivery_address = last_value
-
-    missing = []
-    if idx_inv < 0:
-        missing.append("Invoice No")
-    if idx_person < 0 and not metadata_delivery_person:
-        missing.append("Delivery Person")
-    if idx_date < 0 and not metadata_delivery_date:
-        missing.append("Delivery Date")
-    if idx_address < 0 and not metadata_delivery_address and idx_customer_name < 0:
-        missing.append("Delivery Address")
-    if missing:
-        raise ValueError("Missing required columns: " + ", ".join(missing))
-
-    rows = []
+    rows_out = []
     for row in data_rows:
-        if len(row) <= max(idx_inv, idx_person, idx_date, idx_address):
+        def cell(k):
+            i = idx[k]
+            return _normalize_header(row[i]) if i < len(row) else ""
+
+        invoice_no = cell("invoice_no")
+        if _should_skip_import_row(invoice_no):
             continue
-        non_empty_count = sum(1 for cell in row if _normalize_header(cell))
-        invoice_no = _normalize_header(row[idx_inv]) if idx_inv < len(row) else ""
-        delivery_person = _normalize_header(row[idx_person]) if idx_person >= 0 and idx_person < len(row) else ""
-        delivery_date_raw = _normalize_header(row[idx_date]) if idx_date >= 0 and idx_date < len(row) else ""
-        delivery_address = _normalize_header(row[idx_address]) if idx_address >= 0 and idx_address < len(row) else ""
-        customer_name = _normalize_header(row[idx_customer_name]) if idx_customer_name >= 0 and idx_customer_name < len(row) else ""
-        salesman = _normalize_header(row[idx_salesman]) if idx_salesman >= 0 and idx_salesman < len(row) else None
-        if not invoice_no and not delivery_person and not delivery_address and not customer_name:
+
+        delivery_date = _parse_date(cell("inv_date"))
+        if not delivery_date:
+            if not any(_normalize_header(c) for c in row):
+                continue
+            rows_out.append({
+                "invoice_no": invoice_no,
+                "delivery_date": None,
+                "customer_code": cell("customer_code") or None,
+                "customer_name": cell("customer_name") or "",
+                "beat": cell("beat") or "",
+                "amount": _parse_decimal(cell("inv_val")),
+                "received_amount": _parse_decimal(cell("rec_amt")),
+                "payment_mode": cell("p_mode") or "",
+            })
             continue
-        if not delivery_person and metadata_delivery_person:
-            delivery_person = _normalize_header(metadata_delivery_person)
-        if not delivery_date_raw and metadata_delivery_date:
-            delivery_date_raw = _normalize_header(metadata_delivery_date)
-        if not delivery_address:
-            if customer_name:
-                delivery_address = customer_name
-            elif metadata_delivery_address:
-                delivery_address = _normalize_header(metadata_delivery_address)
-        invoice_key = _normalize_token(invoice_no)
-        if invoice_key in {"invoice no", "salesman", "grand total", "picklist"}:
-            continue
-        if invoice_key.startswith("page "):
-            continue
-        if re.fullmatch(r"[-_\s]+", invoice_no or ""):
-            continue
-        if not delivery_address and idx_customer_name >= 0 and non_empty_count <= 2:
-            # Skip section rows in picklist exports like "Salesman ..." and page totals.
-            continue
-        if (
-            not delivery_address
-            and idx_customer_name >= 0
-            and not re.search(r"\d", invoice_no or "")
-            and "/" not in (invoice_no or "")
-        ):
-            continue
-        delivery_date = _parse_date(delivery_date_raw)
-        rows.append({
+
+        rows_out.append({
             "invoice_no": invoice_no,
-            "delivery_person": delivery_person,
             "delivery_date": delivery_date,
-            "delivery_address": delivery_address or "",
-            "salesman": salesman if salesman else None,
+            "customer_code": cell("customer_code") or None,
+            "customer_name": cell("customer_name") or "",
+            "beat": cell("beat") or "",
+            "amount": _parse_decimal(cell("inv_val")),
+            "received_amount": _parse_decimal(cell("rec_amt")),
+            "payment_mode": (cell("p_mode") or "").strip(),
         })
-    return rows
+    return rows_out
 
 
 def parse_picklist_ocr_text(ocr_text):
     """
     Parse OCR-extracted text into delivery rows (best-effort).
     Looks for patterns like "Delivery Person: X", "Invoice No: Y", "Date: Z", "Address: ..."
-    or table-like lines. Returns list of dicts same shape as parse_picklist_csv.
+    or table-like lines. Returns list of dicts for apply_picklist_rows (DeliveryOrder flow).
     """
     if not ocr_text or not str(ocr_text).strip():
         return []
@@ -281,15 +260,69 @@ def parse_picklist_ocr_text(ocr_text):
     return rows
 
 
+def apply_picklist_csv_import_rows(tenant_id, rows):
+    """
+    Insert or update PicklistImportRow by (tenant_id, invoice_no).
+    Returns dict: created, updated, skipped (list of (row_dict, reason)).
+    """
+    from models import PicklistImportRow
+    from extensions import db
+
+    created = 0
+    updated = 0
+    skipped = []
+
+    for row in rows:
+        invoice_no = (row.get("invoice_no") or "").strip()
+        if not invoice_no:
+            skipped.append((row, "Invoice No is empty"))
+            continue
+        delivery_date = row.get("delivery_date")
+        if not delivery_date:
+            skipped.append((row, "Delivery date (Inv Date) is missing or invalid"))
+            continue
+
+        existing = PicklistImportRow.query.filter_by(
+            tenant_id=tenant_id,
+            invoice_no=invoice_no,
+        ).first()
+
+        if existing:
+            existing.delivery_date = delivery_date
+            existing.customer_code = row.get("customer_code")
+            existing.customer_name = row.get("customer_name") or None
+            existing.beat = row.get("beat") or None
+            existing.amount = row.get("amount")
+            existing.received_amount = row.get("received_amount")
+            existing.payment_mode = row.get("payment_mode") or None
+            updated += 1
+        else:
+            rec = PicklistImportRow(
+                tenant_id=tenant_id,
+                invoice_no=invoice_no,
+                delivery_date=delivery_date,
+                customer_code=row.get("customer_code"),
+                customer_name=row.get("customer_name") or None,
+                beat=row.get("beat") or None,
+                amount=row.get("amount"),
+                received_amount=row.get("received_amount"),
+                payment_mode=row.get("payment_mode") or None,
+                status="pending",
+            )
+            db.session.add(rec)
+            created += 1
+
+    return {"created": created, "updated": updated, "skipped": skipped}
+
+
 def apply_picklist_rows(tenant_id, rows):
     """
-    Create or update DeliveryOrders from parsed rows.
-    Uses models.DeliveryOrder, Bill, ProxyBill, User and extensions.db (imported inside to avoid circular import).
+    Create or update DeliveryOrders from OCR-parsed rows (legacy).
+    Uses models.DeliveryOrder, Bill, ProxyBill, User and extensions.db.
     Returns dict: created (int), updated (int), skipped (list of (row_dict, reason_string)).
     """
     from models import DeliveryOrder, Bill, ProxyBill, User
     from extensions import db
-    from sqlalchemy import and_
 
     def _normalize_lookup_key(value):
         text = (value or "").strip().lower()

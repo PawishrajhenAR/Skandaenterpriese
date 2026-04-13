@@ -8,7 +8,7 @@
     <a href="{{ url_for('picklist.list') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Picklists</a>
 </div>
 
-<p class="text-muted mb-4">Upload a picklist as CSV or an image (OCR) to create or update delivery orders and assign delivery person or salesman.</p>
+<p class="text-muted mb-4">Upload a CSV <strong>invoice table</strong> (columns: Invoice No, Inv Date, Customer, Customer Name, Beat, P-Mode, InvVal, RecAmt) to import rows into picklists. Or upload an image (OCR) to match delivery orders to existing bills.</p>
 
 <div class="row">
     <div class="col-lg-6 mb-4">
@@ -17,7 +17,7 @@
                 <h5 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> Upload CSV</h5>
             </div>
             <div class="card-body">
-                <p class="small text-muted">CSV must have columns: <strong>Invoice No</strong>, <strong>Delivery Person</strong>, <strong>Delivery Date</strong>, <strong>Delivery Address</strong>. Optional: <strong>Salesman</strong>.</p>
+                <p class="small text-muted">Required columns: <strong>Invoice No</strong>, <strong>Inv Date</strong>, <strong>Customer</strong>, <strong>Customer Name</strong>, <strong>Beat</strong>, <strong>P-Mode</strong>, <strong>InvVal</strong>, <strong>RecAmt</strong>. Summary rows (Salesman, Grand Total, dashes) are ignored.</p>
                 <form method="POST" enctype="multipart/form-data" id="formCsv">
                     <input type="hidden" name="upload_type" value="csv">
                     <div class="mb-3">

@@ -3,6 +3,8 @@ from config import config
 from extensions import db, login_manager
 from models import User
 import os
+from sqlalchemy import inspect
+from sqlalchemy.exc import ProgrammingError, OperationalError
 
 # Import blueprints
 from api_routes import api_bp
@@ -62,7 +64,25 @@ def create_app(config_name='default'):
     
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        try:
+            return User.query.get(int(user_id))
+        except (ProgrammingError, OperationalError):
+            # DB schema not ready yet; treat as anonymous user.
+            db.session.rollback()
+            return None
+
+    def ensure_database_schema():
+        """
+        Ensure core tables exist before request handling.
+        Prevents startup crashes like 'relation \"users\" does not exist'.
+        """
+        try:
+            inspector = inspect(db.engine)
+            if not inspector.has_table("users"):
+                app.logger.warning("Core tables missing; running db.create_all() bootstrap")
+                db.create_all()
+        except Exception as exc:
+            app.logger.warning("Database bootstrap check failed: %s", exc)
     
     # Currency filter for templates (e.g. picklist, reports)
     @app.template_filter('currency')
@@ -142,6 +162,12 @@ def create_app(config_name='default'):
             os.makedirs(backup_folder, exist_ok=True)
     except (OSError, PermissionError):
         pass
+
+    # Ensure schema exists in local/full/frontend modes.
+    # API mode is typically managed by explicit migrations in deployment.
+    if deploy_mode != 'api':
+        with app.app_context():
+            ensure_database_schema()
     
     # Health endpoints
     @app.route('/health')

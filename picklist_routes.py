@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, abort, Response, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-from sqlalchemy import func
+from sqlalchemy import func, desc
 from datetime import datetime
 
 from export_utils import generate_picklist_pdf
@@ -15,6 +15,7 @@ from picklist_upload_utils import (
     parse_picklist_csv,
     parse_picklist_ocr_text,
     apply_picklist_rows,
+    apply_picklist_csv_import_rows,
 )
 
 from models import (
@@ -26,6 +27,7 @@ from models import (
     Vendor,
     Tenant,
     CreditEntry,
+    PicklistImportRow,
 )
 from extensions import db
 from auth_routes import permission_required
@@ -141,6 +143,13 @@ def list():
         flash("Tenant not found.", "danger")
         return redirect(url_for("main.dashboard"))
 
+    import_rows = (
+        PicklistImportRow.query.filter_by(tenant_id=tenant.id)
+        .order_by(desc(PicklistImportRow.delivery_date).nulls_last(), PicklistImportRow.id.desc())
+        .all()
+    )
+
+    # Delivery orders linked to bills (e.g. OCR / legacy flow)
     if current_user.role == "DELIVERY":
         query = DeliveryOrder.query.filter_by(
             tenant_id=tenant.id,
@@ -149,7 +158,6 @@ def list():
     else:
         query = DeliveryOrder.query.filter_by(tenant_id=tenant.id)
 
-    # Only show deliveries that have a bill or proxy bill (valid picklists)
     query = query.filter(
         (DeliveryOrder.bill_id.isnot(None)) | (DeliveryOrder.proxy_bill_id.isnot(None))
     )
@@ -157,6 +165,7 @@ def list():
 
     return render_template(
         "picklists/list.html",
+        import_rows=import_rows,
         deliveries=deliveries,
     )
 
@@ -238,7 +247,10 @@ def upload():
             return redirect(url_for("picklist.upload"))
 
     try:
-        result = apply_picklist_rows(tenant.id, rows)
+        if upload_type == "csv":
+            result = apply_picklist_csv_import_rows(tenant.id, rows)
+        else:
+            result = apply_picklist_rows(tenant.id, rows)
         db.session.commit()
         log_action(current_user, "UPLOAD_PICKLIST", "PICKLIST", 0)
         created = result["created"]
@@ -246,7 +258,7 @@ def upload():
         skipped_list = result["skipped"]
         msg = f"Picklist upload complete: {created} created, {updated} updated, {len(skipped_list)} skipped."
         flash(msg, "success")
-        if skipped_list and created == 0 and updated == 0:
+        if upload_type != "csv" and skipped_list and created == 0 and updated == 0:
             missing_bill_skips = sum(
                 1
                 for _row, reason in skipped_list
@@ -275,6 +287,21 @@ def upload():
         current_app.logger.exception("Picklist apply error")
         flash(f"Failed to apply picklist: {e}", "danger")
         return redirect(url_for("picklist.upload"))
+
+
+@picklist_bp.route("/import/<int:id>")
+@login_required
+@permission_required("view_deliveries")
+def import_detail(id):
+    tenant = get_default_tenant()
+    if not tenant:
+        flash("Tenant not found.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    row = PicklistImportRow.query.filter_by(tenant_id=tenant.id, id=id).first()
+    if not row:
+        abort(404)
+    return render_template("picklists/import_detail.html", row=row)
 
 
 @picklist_bp.route("/<int:id>")

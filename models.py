@@ -18,6 +18,7 @@ class Tenant(db.Model):
     proxy_bills = db.relationship('ProxyBill', backref='tenant', lazy=True)
     credit_entries = db.relationship('CreditEntry', backref='tenant', lazy=True)
     delivery_orders = db.relationship('DeliveryOrder', backref='tenant', lazy=True)
+    picklist_import_rows = db.relationship('PicklistImportRow', backref='tenant', lazy=True)
     ocr_jobs = db.relationship('OCRJob', backref='tenant', lazy=True)
     audit_logs = db.relationship('AuditLog', backref='tenant', lazy=True)
 
@@ -253,6 +254,28 @@ class DeliveryOrder(db.Model):
     salesman_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
     salesman = db.relationship('User', foreign_keys=[salesman_id], backref='salesman_deliveries', lazy=True)
+
+
+class PicklistImportRow(db.Model):
+    """Rows imported from picklist CSV (invoice table exports). Separate from DeliveryOrder / bills."""
+    __tablename__ = 'picklist_import_rows'
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'invoice_no', name='uq_picklist_import_tenant_invoice'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
+    invoice_no = db.Column(db.String(200), nullable=False)
+    delivery_date = db.Column(db.Date, nullable=True)
+    customer_code = db.Column(db.String(100), nullable=True)
+    customer_name = db.Column(db.String(500), nullable=True)
+    beat = db.Column(db.String(300), nullable=True)
+    amount = db.Column(db.Numeric(12, 2), nullable=True)
+    received_amount = db.Column(db.Numeric(12, 2), nullable=True)
+    payment_mode = db.Column(db.String(50), nullable=True)
+    status = db.Column(db.String(30), nullable=False, default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class OCRJob(db.Model):
