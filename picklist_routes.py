@@ -255,9 +255,33 @@ def upload():
         log_action(current_user, "UPLOAD_PICKLIST", "PICKLIST", 0)
         created = result["created"]
         updated = result["updated"]
+        bills_updated = result.get("bills_updated", 0)
+        deliveries_created = result.get("deliveries_created", 0)
+        deliveries_updated = result.get("deliveries_updated", 0)
+        no_matching_bill = result.get("no_matching_bill", 0)
+        no_delivery_user = result.get("no_delivery_user", 0)
         skipped_list = result["skipped"]
-        msg = f"Picklist upload complete: {created} created, {updated} updated, {len(skipped_list)} skipped."
+        if upload_type == "csv":
+            msg = (
+                "Picklist CSV sync complete: "
+                f"{created} import rows created, {updated} import rows updated, "
+                f"{bills_updated} bills updated, {deliveries_created} deliveries created, "
+                f"{deliveries_updated} deliveries updated, "
+                f"{len(skipped_list)} skipped."
+            )
+        else:
+            msg = f"Picklist upload complete: {created} created, {updated} updated, {len(skipped_list)} skipped."
         flash(msg, "success")
+        if upload_type == "csv" and no_matching_bill:
+            flash(
+                f"{no_matching_bill} row(s) had no matching bill/proxy invoice number.",
+                "warning",
+            )
+        if upload_type == "csv" and no_delivery_user:
+            flash(
+                f"{no_delivery_user} row(s) matched invoice(s) but no delivery user could be resolved.",
+                "warning",
+            )
         if upload_type != "csv" and skipped_list and created == 0 and updated == 0:
             missing_bill_skips = sum(
                 1

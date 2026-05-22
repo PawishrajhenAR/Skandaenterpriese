@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
-from models import Bill, BillItem, Vendor, Tenant, CreditEntry, ProxyBill, ProxyBillItem
+from models import Bill, BillItem, Vendor, Tenant, CreditEntry, ProxyBill, ProxyBillItem, DeliveryOrder
 from forms import BillForm
 from extensions import db
 from audit import log_action
@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 from decimal import Decimal
 from pathlib import Path
 from datetime import datetime
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from auth_routes import permission_required
 
 bill_bp = Blueprint('bill', __name__)
@@ -17,6 +17,17 @@ bill_bp = Blueprint('bill', __name__)
 
 def get_default_tenant():
     return Tenant.query.filter_by(code='skanda').first()
+
+
+def apply_user_bill_scope(query):
+    if current_user.role == 'DELIVERY':
+        return query.filter(or_(
+            Bill.delivery_orders.any(DeliveryOrder.delivery_user_id == current_user.id),
+            Bill.proxy_bills.any(
+                ProxyBill.delivery_orders.any(DeliveryOrder.delivery_user_id == current_user.id)
+            )
+        ))
+    return query
 
 
 @bill_bp.route('/')
@@ -34,6 +45,8 @@ def list():
     # ORGANISER can only see authorized bills
     if current_user.role == 'ORGANISER':
         query = query.filter(Bill.is_authorized == True)
+    else:
+        query = apply_user_bill_scope(query)
     
     # Get filter parameters
     show_unauthorized = request.args.get('show_unauthorized', 'false') == 'true'
@@ -1372,6 +1385,19 @@ def create_proxy_splits(id, splits):
 def detail(id):
     bill = Bill.query.get_or_404(id)
     tenant = get_default_tenant()
+    if not tenant or bill.tenant_id != tenant.id:
+        flash('Bill not found.', 'danger')
+        return redirect(url_for('bill.list'))
+    if current_user.role == 'ORGANISER' and not bill.is_authorized:
+        flash('Bill not found.', 'danger')
+        return redirect(url_for('bill.list'))
+    scoped_bill = apply_user_bill_scope(
+        Bill.query.filter(Bill.tenant_id == tenant.id, Bill.id == bill.id)
+    ).first()
+    if not scoped_bill:
+        flash('Bill not found.', 'danger')
+        return redirect(url_for('bill.list'))
+
     credits = CreditEntry.query.filter_by(bill_id=bill.id, direction='INCOMING').all()
     proxy_bills = ProxyBill.query.filter_by(parent_bill_id=bill.id).all()
     

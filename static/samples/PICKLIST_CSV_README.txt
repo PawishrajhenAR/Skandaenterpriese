@@ -12,8 +12,15 @@ Required columns (header row; names matched case-insensitively):
   - InvVal            (invoice amount; commas allowed)
   - RecAmt            (received amount; commas allowed)
 
+Optional columns:
+
+  - Delivery User     (matches an active DELIVERY username)
+  - Salesman          (matches an active SALESMAN username)
+
 Rows are stored in picklist_import_rows (status default: pending).
 Re-uploading the same Invoice No updates the row (per tenant).
+Matched invoices also create/update delivery orders and update the linked bill delivery date.
+If Delivery User is omitted, upload can auto-assign only when exactly one active DELIVERY user exists.
 
 Ignored rows: empty invoice, Salesman summary, Grand Total, separator lines (---).
 

@@ -214,7 +214,11 @@ def create():
 @login_required
 @permission_required('view_deliveries')
 def detail(id):
-    delivery = DeliveryOrder.query.get_or_404(id)
+    tenant = get_default_tenant()
+    delivery = DeliveryOrder.query.filter_by(tenant_id=tenant.id, id=id).first_or_404()
+    if current_user.role == 'DELIVERY' and delivery.delivery_user_id != current_user.id:
+        flash('Delivery order not found.', 'danger')
+        return redirect(url_for('delivery.list'))
     return render_template('deliveries/detail.html', delivery=delivery)
 
 
@@ -222,7 +226,11 @@ def detail(id):
 @login_required
 @permission_required('update_delivery')
 def update_status(id):
-    delivery = DeliveryOrder.query.get_or_404(id)
+    tenant = get_default_tenant()
+    delivery = DeliveryOrder.query.filter_by(tenant_id=tenant.id, id=id).first_or_404()
+    if current_user.role == 'DELIVERY' and delivery.delivery_user_id != current_user.id:
+        flash('Delivery order not found.', 'danger')
+        return redirect(url_for('delivery.list'))
     new_status = request.form.get('status')
     
     if new_status in ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED']:

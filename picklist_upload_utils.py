@@ -9,7 +9,7 @@ from pathlib import Path
 
 # --- CSV invoice-table format (distributor export) ---
 # Headers: Invoice No, Inv Date, Customer, Customer Name, Beat, P-Mode, InvVal, RecAmt
-PICKLIST_IMPORT_CSV_KEYS = (
+PICKLIST_IMPORT_REQUIRED_CSV_KEYS = (
     "invoice_no",
     "inv_date",
     "customer_code",
@@ -19,6 +19,11 @@ PICKLIST_IMPORT_CSV_KEYS = (
     "inv_val",
     "rec_amt",
 )
+PICKLIST_IMPORT_OPTIONAL_CSV_KEYS = (
+    "delivery_person",
+    "salesman",
+)
+PICKLIST_IMPORT_CSV_KEYS = PICKLIST_IMPORT_REQUIRED_CSV_KEYS + PICKLIST_IMPORT_OPTIONAL_CSV_KEYS
 
 PICKLIST_IMPORT_ALIASES = {
     "invoice_no": ("invoice no", "invoice no."),
@@ -29,6 +34,8 @@ PICKLIST_IMPORT_ALIASES = {
     "p_mode": ("p mode", "p-mode", "payment mode", "pmode"),
     "inv_val": ("invval", "inv val", "invoice value", "inv value"),
     "rec_amt": ("recamt", "rec amt", "received amount", "rec amount"),
+    "delivery_person": ("delivery person", "delivery user", "delivery boy", "delivered by"),
+    "salesman": ("salesman", "salesman name", "sales person", "ds name"),
 }
 
 
@@ -49,7 +56,7 @@ def _find_import_column_indices(header_row):
     """Map canonical keys to column indices. Returns dict or None if incomplete."""
     normalized_headers = [_normalize_token(h) for h in header_row]
     indices = {}
-    for key in PICKLIST_IMPORT_CSV_KEYS:
+    for key in PICKLIST_IMPORT_REQUIRED_CSV_KEYS:
         aliases = PICKLIST_IMPORT_ALIASES.get(key, ())
         found = -1
         for alias in aliases:
@@ -64,6 +71,16 @@ def _find_import_column_indices(header_row):
             return None
         indices[key] = found
     # Disambiguate: "customer" must not match "customer name" column — already separate aliases
+    for key in PICKLIST_IMPORT_OPTIONAL_CSV_KEYS:
+        aliases = PICKLIST_IMPORT_ALIASES.get(key, ())
+        for alias in aliases:
+            ac = _normalize_token(alias)
+            for i, h in enumerate(normalized_headers):
+                if h == ac:
+                    indices[key] = i
+                    break
+            if key in indices:
+                break
     return indices
 
 
@@ -162,7 +179,7 @@ def parse_picklist_csv(filepath):
             best_header_idx = row_idx
             best_indices = _find_import_column_indices(row)
 
-    if not best_indices or best_score < len(PICKLIST_IMPORT_CSV_KEYS):
+    if not best_indices or best_score < len(PICKLIST_IMPORT_REQUIRED_CSV_KEYS):
         raise ValueError(
             "Missing required columns. Expected: Invoice No, Inv Date, Customer, Customer Name, "
             "Beat, P-Mode, InvVal, RecAmt"
@@ -170,6 +187,19 @@ def parse_picklist_csv(filepath):
 
     idx = best_indices
     data_rows = csv_data[best_header_idx + 1 :]
+    current_salesman = None
+
+    def optional_cell(row, key):
+        i = idx.get(key)
+        return _normalize_header(row[i]) if i is not None and i < len(row) else ""
+
+    def extract_salesman_name(row):
+        text = " ".join(_normalize_header(c) for c in row if _normalize_header(c))
+        match = re.search(r"sales\s*man(?:\s*name)?\s*[:\-]?\s*(.+)$", text, re.I)
+        if not match:
+            return None
+        name = match.group(1).strip(" :-")
+        return name or None
 
     rows_out = []
     for row in data_rows:
@@ -179,9 +209,14 @@ def parse_picklist_csv(filepath):
 
         invoice_no = cell("invoice_no")
         if _should_skip_import_row(invoice_no):
+            salesman_name = extract_salesman_name(row)
+            if salesman_name:
+                current_salesman = salesman_name
             continue
 
         delivery_date = _parse_date(cell("inv_date"))
+        delivery_person = optional_cell(row, "delivery_person")
+        salesman = optional_cell(row, "salesman") or current_salesman
         if not delivery_date:
             if not any(_normalize_header(c) for c in row):
                 continue
@@ -194,6 +229,8 @@ def parse_picklist_csv(filepath):
                 "amount": _parse_decimal(cell("inv_val")),
                 "received_amount": _parse_decimal(cell("rec_amt")),
                 "payment_mode": cell("p_mode") or "",
+                "delivery_person": delivery_person or None,
+                "salesman": salesman or None,
             })
             continue
 
@@ -206,6 +243,8 @@ def parse_picklist_csv(filepath):
             "amount": _parse_decimal(cell("inv_val")),
             "received_amount": _parse_decimal(cell("rec_amt")),
             "payment_mode": (cell("p_mode") or "").strip(),
+            "delivery_person": delivery_person or None,
+            "salesman": salesman or None,
         })
     return rows_out
 
@@ -262,15 +301,80 @@ def parse_picklist_ocr_text(ocr_text):
 
 def apply_picklist_csv_import_rows(tenant_id, rows):
     """
-    Insert or update PicklistImportRow by (tenant_id, invoice_no).
+    Insert/update PicklistImportRow and sync matched bills into delivery orders.
     Returns dict: created, updated, skipped (list of (row_dict, reason)).
     """
-    from models import PicklistImportRow
+    from models import PicklistImportRow, Bill, ProxyBill, DeliveryOrder, User
     from extensions import db
+
+    def _normalize_lookup_key(value):
+        text = (value or "").strip().lower()
+        text = re.sub(r"[^a-z0-9/]+", "", text)
+        return text
 
     created = 0
     updated = 0
+    bills_updated = 0
+    deliveries_created = 0
+    deliveries_updated = 0
+    no_matching_bill = 0
+    no_existing_delivery = 0
+    no_delivery_user = 0
     skipped = []
+
+    bills = Bill.query.filter_by(tenant_id=tenant_id).all()
+    proxy_bills = ProxyBill.query.filter_by(tenant_id=tenant_id).all()
+    delivery_orders = DeliveryOrder.query.filter_by(tenant_id=tenant_id).all()
+    active_users = User.query.filter_by(tenant_id=tenant_id, is_active=True).all()
+    delivery_users = [u for u in active_users if u.role == "DELIVERY"]
+
+    bill_lookup = {_normalize_lookup_key(b.bill_number): b for b in bills if b.bill_number}
+    proxy_lookup = {_normalize_lookup_key(p.proxy_number): p for p in proxy_bills if p.proxy_number}
+    user_lookup = {_normalize_lookup_key(u.username): u for u in active_users if u.username}
+    default_delivery_user = delivery_users[0] if len(delivery_users) == 1 else None
+    delivery_by_bill = {}
+    delivery_by_proxy = {}
+    for delivery in delivery_orders:
+        if delivery.bill_id:
+            delivery_by_bill.setdefault(delivery.bill_id, []).append(delivery)
+        if delivery.proxy_bill_id:
+            delivery_by_proxy.setdefault(delivery.proxy_bill_id, []).append(delivery)
+
+    def resolve_delivery_user(row):
+        delivery_name = (
+            row.get("delivery_person")
+            or row.get("delivery_user")
+            or row.get("delivery_user_name")
+            or ""
+        ).strip()
+        if delivery_name:
+            user = user_lookup.get(_normalize_lookup_key(delivery_name))
+            if user and user.role == "DELIVERY":
+                return user
+            return None
+        return default_delivery_user
+
+    def resolve_salesman(row):
+        salesman_name = (row.get("salesman") or "").strip()
+        if not salesman_name:
+            return None
+        user = user_lookup.get(_normalize_lookup_key(salesman_name))
+        if user and user.role in {"SALESMAN", "DELIVERY"}:
+            return user
+        return None
+
+    def delivery_address_for(row, bill_or_proxy):
+        vendor = getattr(bill_or_proxy, "vendor", None)
+        for value in (
+            getattr(vendor, "shipping_address", None),
+            getattr(vendor, "billing_address", None),
+            getattr(vendor, "address", None),
+            row.get("customer_name"),
+            getattr(vendor, "name", None),
+        ):
+            if value and str(value).strip():
+                return str(value).strip()
+        return "Address pending"
 
     for row in rows:
         invoice_no = (row.get("invoice_no") or "").strip()
@@ -312,7 +416,95 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
             db.session.add(rec)
             created += 1
 
-    return {"created": created, "updated": updated, "skipped": skipped}
+        normalized_invoice = _normalize_lookup_key(invoice_no)
+        matched_bill = bill_lookup.get(normalized_invoice)
+        matched_proxy = None if matched_bill else proxy_lookup.get(normalized_invoice)
+
+        if not matched_bill and not matched_proxy:
+            no_matching_bill += 1
+            skipped.append((row, f"No Bill or ProxyBill found for Invoice No '{invoice_no}'"))
+            continue
+
+        bill_to_update = matched_bill
+        if not bill_to_update and matched_proxy and matched_proxy.parent_bill:
+            bill_to_update = matched_proxy.parent_bill
+
+        if bill_to_update and bill_to_update.delivery_date != delivery_date:
+            bill_to_update.delivery_date = delivery_date
+            bills_updated += 1
+
+        matching_deliveries = []
+        if matched_bill:
+            matching_deliveries = delivery_by_bill.get(matched_bill.id, [])
+        elif matched_proxy:
+            matching_deliveries = delivery_by_proxy.get(matched_proxy.id, [])
+
+        salesman_user = resolve_salesman(row)
+
+        if not matching_deliveries:
+            delivery_user = resolve_delivery_user(row)
+            if not delivery_user:
+                no_existing_delivery += 1
+                no_delivery_user += 1
+                skipped.append((
+                    row,
+                    f"No delivery user found for Invoice No '{invoice_no}'. "
+                    "Add a Delivery User column or keep exactly one active DELIVERY user.",
+                ))
+                continue
+
+            bill_or_proxy = matched_bill or matched_proxy
+            delivery = DeliveryOrder(
+                tenant_id=tenant_id,
+                bill_id=matched_bill.id if matched_bill else None,
+                proxy_bill_id=matched_proxy.id if matched_proxy else None,
+                delivery_user_id=delivery_user.id,
+                delivery_address=delivery_address_for(row, bill_or_proxy),
+                delivery_date=delivery_date,
+                status="PENDING",
+                salesman_id=salesman_user.id if salesman_user else None,
+            )
+            db.session.add(delivery)
+            if matched_bill:
+                delivery_by_bill.setdefault(matched_bill.id, []).append(delivery)
+            elif matched_proxy:
+                delivery_by_proxy.setdefault(matched_proxy.id, []).append(delivery)
+            deliveries_created += 1
+            continue
+
+        for delivery in matching_deliveries:
+            changed = False
+            if delivery.delivery_date != delivery_date:
+                delivery.delivery_date = delivery_date
+                changed = True
+            resolved_delivery_user = resolve_delivery_user(row)
+            if resolved_delivery_user and delivery.delivery_user_id != resolved_delivery_user.id:
+                delivery.delivery_user_id = resolved_delivery_user.id
+                changed = True
+            if salesman_user and delivery.salesman_id != salesman_user.id:
+                delivery.salesman_id = salesman_user.id
+                changed = True
+            bill_or_proxy = matched_bill or matched_proxy
+            delivery_address = delivery_address_for(row, bill_or_proxy)
+            if delivery_address and delivery.delivery_address != delivery_address:
+                delivery.delivery_address = delivery_address
+                changed = True
+            if changed:
+                deliveries_updated += 1
+
+    return {
+        "created": created,
+        "updated": updated,
+        "import_created": created,
+        "import_updated": updated,
+        "bills_updated": bills_updated,
+        "deliveries_created": deliveries_created,
+        "deliveries_updated": deliveries_updated,
+        "no_matching_bill": no_matching_bill,
+        "no_existing_delivery": no_existing_delivery,
+        "no_delivery_user": no_delivery_user,
+        "skipped": skipped,
+    }
 
 
 def apply_picklist_rows(tenant_id, rows):
