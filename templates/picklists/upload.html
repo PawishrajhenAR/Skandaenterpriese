@@ -67,6 +67,10 @@
     <div class="card-body">
         <p class="mb-1"><strong>Created:</strong> {{ upload_result.created }}</p>
         <p class="mb-1"><strong>Updated:</strong> {{ upload_result.updated }}</p>
+        {% if upload_result.bills_created is defined %}
+        <p class="mb-1"><strong>Bills Created:</strong> {{ upload_result.bills_created }}</p>
+        <p class="mb-1"><strong>Bills Updated:</strong> {{ upload_result.bills_updated }}</p>
+        {% endif %}
         {% if upload_result.deliveries_created is defined %}
         <p class="mb-1"><strong>Deliveries Created:</strong> {{ upload_result.deliveries_created }}</p>
         <p class="mb-1"><strong>Deliveries Updated:</strong> {{ upload_result.deliveries_updated }}</p>

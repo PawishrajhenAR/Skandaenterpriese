@@ -19,7 +19,7 @@ Optional columns:
 
 Rows are stored in picklist_import_rows (status default: pending).
 Re-uploading the same Invoice No updates the row (per tenant).
-Matched invoices also create/update delivery orders and update the linked bill delivery date.
+Rows create/update normal bills from the invoice data and create/update delivery orders.
 If Delivery User is omitted, upload can auto-assign only when exactly one active DELIVERY user exists.
 
 Ignored rows: empty invoice, Salesman summary, Grand Total, separator lines (---).

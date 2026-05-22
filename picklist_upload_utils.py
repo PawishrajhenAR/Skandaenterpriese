@@ -304,7 +304,7 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
     Insert/update PicklistImportRow and sync matched bills into delivery orders.
     Returns dict: created, updated, skipped (list of (row_dict, reason)).
     """
-    from models import PicklistImportRow, Bill, ProxyBill, DeliveryOrder, User
+    from models import PicklistImportRow, Bill, ProxyBill, DeliveryOrder, User, Vendor
     from extensions import db
 
     def _normalize_lookup_key(value):
@@ -314,6 +314,7 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
 
     created = 0
     updated = 0
+    bills_created = 0
     bills_updated = 0
     deliveries_created = 0
     deliveries_updated = 0
@@ -325,11 +326,14 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
     bills = Bill.query.filter_by(tenant_id=tenant_id).all()
     proxy_bills = ProxyBill.query.filter_by(tenant_id=tenant_id).all()
     delivery_orders = DeliveryOrder.query.filter_by(tenant_id=tenant_id).all()
+    vendors = Vendor.query.filter_by(tenant_id=tenant_id).all()
     active_users = User.query.filter_by(tenant_id=tenant_id, is_active=True).all()
     delivery_users = [u for u in active_users if u.role == "DELIVERY"]
 
     bill_lookup = {_normalize_lookup_key(b.bill_number): b for b in bills if b.bill_number}
     proxy_lookup = {_normalize_lookup_key(p.proxy_number): p for p in proxy_bills if p.proxy_number}
+    vendor_by_code = {_normalize_lookup_key(v.customer_code): v for v in vendors if v.customer_code}
+    vendor_by_name = {_normalize_lookup_key(v.name): v for v in vendors if v.name}
     user_lookup = {_normalize_lookup_key(u.username): u for u in active_users if u.username}
     default_delivery_user = delivery_users[0] if len(delivery_users) == 1 else None
     delivery_by_bill = {}
@@ -376,6 +380,36 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
                 return str(value).strip()
         return "Address pending"
 
+    def resolve_vendor(row):
+        customer_code = (row.get("customer_code") or "").strip()
+        customer_name = (row.get("customer_name") or "").strip()
+        vendor = None
+        if customer_code:
+            vendor = vendor_by_code.get(_normalize_lookup_key(customer_code))
+        if not vendor and customer_name:
+            vendor = vendor_by_name.get(_normalize_lookup_key(customer_name))
+        if vendor:
+            if customer_code and not vendor.customer_code:
+                vendor.customer_code = customer_code
+                vendor_by_code[_normalize_lookup_key(customer_code)] = vendor
+            if customer_name and vendor.name != customer_name:
+                vendor.name = customer_name
+                vendor_by_name[_normalize_lookup_key(customer_name)] = vendor
+            return vendor
+
+        vendor = Vendor(
+            tenant_id=tenant_id,
+            name=customer_name or customer_code or "Picklist Customer",
+            type="CUSTOMER",
+            customer_code=customer_code or None,
+        )
+        db.session.add(vendor)
+        db.session.flush()
+        if vendor.customer_code:
+            vendor_by_code[_normalize_lookup_key(vendor.customer_code)] = vendor
+        vendor_by_name[_normalize_lookup_key(vendor.name)] = vendor
+        return vendor
+
     for row in rows:
         invoice_no = (row.get("invoice_no") or "").strip()
         if not invoice_no:
@@ -421,17 +455,61 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
         matched_proxy = None if matched_bill else proxy_lookup.get(normalized_invoice)
 
         if not matched_bill and not matched_proxy:
-            no_matching_bill += 1
-            skipped.append((row, f"No Bill or ProxyBill found for Invoice No '{invoice_no}'"))
-            continue
+            vendor = resolve_vendor(row)
+            amount = row.get("amount") or Decimal("0.00")
+            matched_bill = Bill(
+                tenant_id=tenant_id,
+                vendor_id=vendor.id,
+                bill_number=invoice_no,
+                bill_date=delivery_date,
+                bill_type="NORMAL",
+                status="CONFIRMED",
+                amount_subtotal=amount,
+                amount_tax=Decimal("0.00"),
+                amount_total=amount,
+                delivery_date=delivery_date,
+                billed_to_name=row.get("customer_name") or None,
+                shipped_to_name=row.get("customer_name") or None,
+            )
+            db.session.add(matched_bill)
+            db.session.flush()
+            bill_lookup[normalized_invoice] = matched_bill
+            bills_created += 1
 
         bill_to_update = matched_bill
         if not bill_to_update and matched_proxy and matched_proxy.parent_bill:
             bill_to_update = matched_proxy.parent_bill
 
-        if bill_to_update and bill_to_update.delivery_date != delivery_date:
-            bill_to_update.delivery_date = delivery_date
-            bills_updated += 1
+        if bill_to_update and bill_to_update.id != getattr(matched_bill, "id", None):
+            if bill_to_update.delivery_date != delivery_date:
+                bill_to_update.delivery_date = delivery_date
+                bills_updated += 1
+        elif bill_to_update:
+            bill_changed = False
+            amount = row.get("amount")
+            customer_name = (row.get("customer_name") or "").strip()
+            vendor = resolve_vendor(row)
+            if bill_to_update.vendor_id != vendor.id:
+                bill_to_update.vendor_id = vendor.id
+                bill_changed = True
+            if bill_to_update.bill_date != delivery_date:
+                bill_to_update.bill_date = delivery_date
+                bill_changed = True
+            if bill_to_update.delivery_date != delivery_date:
+                bill_to_update.delivery_date = delivery_date
+                bill_changed = True
+            if amount is not None and bill_to_update.amount_total != amount:
+                bill_to_update.amount_subtotal = amount
+                bill_to_update.amount_total = amount
+                bill_changed = True
+            if customer_name and bill_to_update.billed_to_name != customer_name:
+                bill_to_update.billed_to_name = customer_name
+                bill_changed = True
+            if customer_name and bill_to_update.shipped_to_name != customer_name:
+                bill_to_update.shipped_to_name = customer_name
+                bill_changed = True
+            if bill_changed:
+                bills_updated += 1
 
         matching_deliveries = []
         if matched_bill:
@@ -497,6 +575,7 @@ def apply_picklist_csv_import_rows(tenant_id, rows):
         "updated": updated,
         "import_created": created,
         "import_updated": updated,
+        "bills_created": bills_created,
         "bills_updated": bills_updated,
         "deliveries_created": deliveries_created,
         "deliveries_updated": deliveries_updated,

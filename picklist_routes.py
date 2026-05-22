@@ -255,6 +255,7 @@ def upload():
         log_action(current_user, "UPLOAD_PICKLIST", "PICKLIST", 0)
         created = result["created"]
         updated = result["updated"]
+        bills_created = result.get("bills_created", 0)
         bills_updated = result.get("bills_updated", 0)
         deliveries_created = result.get("deliveries_created", 0)
         deliveries_updated = result.get("deliveries_updated", 0)
@@ -265,7 +266,8 @@ def upload():
             msg = (
                 "Picklist CSV sync complete: "
                 f"{created} import rows created, {updated} import rows updated, "
-                f"{bills_updated} bills updated, {deliveries_created} deliveries created, "
+                f"{bills_created} bills created, {bills_updated} bills updated, "
+                f"{deliveries_created} deliveries created, "
                 f"{deliveries_updated} deliveries updated, "
                 f"{len(skipped_list)} skipped."
             )

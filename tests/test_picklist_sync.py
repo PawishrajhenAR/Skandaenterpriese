@@ -63,6 +63,7 @@ def test_picklist_csv_sync_updates_bill_and_existing_delivery(app):
         db.session.refresh(delivery)
 
         assert result["bills_updated"] == 1
+        assert result["bills_created"] == 0
         assert result["deliveries_updated"] == 1
         assert result["no_existing_delivery"] == 0
         assert bill.delivery_date == date(2024, 2, 10)
@@ -101,6 +102,7 @@ def test_picklist_csv_sync_updates_bill_and_creates_missing_delivery(app):
         db.session.refresh(bill)
 
         assert result["bills_updated"] == 1
+        assert result["bills_created"] == 0
         assert result["deliveries_created"] == 1
         assert result["deliveries_updated"] == 0
         assert result["no_existing_delivery"] == 0
@@ -109,20 +111,20 @@ def test_picklist_csv_sync_updates_bill_and_creates_missing_delivery(app):
         delivery = DeliveryOrder.query.filter_by(bill_id=bill.id).one()
         assert delivery.delivery_user_id == delivery_user.id
         assert delivery.delivery_date == date(2024, 3, 15)
-        assert delivery.delivery_address == vendor.name
+        assert delivery.delivery_address == "Customer 2"
 
 
-def test_picklist_csv_sync_skips_when_invoice_has_no_bill_or_proxy(app):
+def test_picklist_csv_sync_creates_bill_when_invoice_is_new(app):
     with app.app_context():
         tenant = Tenant.query.filter_by(code="skanda").first()
         rows = [
             {
-                "invoice_no": "INV-NOT-FOUND",
+                "invoice_no": "INV-NEW-1",
                 "delivery_date": date(2024, 4, 1),
                 "customer_code": "C003",
                 "customer_name": "Customer 3",
                 "beat": "Beat C",
-                "amount": None,
+                "amount": 250,
                 "received_amount": None,
                 "payment_mode": "CARD",
             }
@@ -131,10 +133,19 @@ def test_picklist_csv_sync_skips_when_invoice_has_no_bill_or_proxy(app):
         result = apply_picklist_csv_import_rows(tenant.id, rows)
         db.session.commit()
 
-        assert result["no_matching_bill"] == 1
-        assert result["bills_updated"] == 0
-        assert result["deliveries_updated"] == 0
-        assert any("No Bill or ProxyBill found" in reason for _row, reason in result["skipped"])
+        bill = Bill.query.filter_by(tenant_id=tenant.id, bill_number="INV-NEW-1").one()
+        delivery = DeliveryOrder.query.filter_by(tenant_id=tenant.id, bill_id=bill.id).one()
+
+        assert result["bills_created"] == 1
+        assert result["no_matching_bill"] == 0
+        assert result["deliveries_created"] == 1
+        assert not result["skipped"]
+        assert bill.bill_date == date(2024, 4, 1)
+        assert bill.delivery_date == date(2024, 4, 1)
+        assert bill.amount_total == 250
+        assert bill.vendor.customer_code == "C003"
+        assert bill.vendor.name == "Customer 3"
+        assert delivery.delivery_date == date(2024, 4, 1)
 
 
 def test_picklist_csv_sync_uses_delivery_user_column_when_multiple_delivery_users(app):
@@ -179,6 +190,7 @@ def test_picklist_csv_sync_uses_delivery_user_column_when_multiple_delivery_user
         db.session.commit()
 
         assert result["deliveries_created"] == 1
+        assert result["bills_created"] == 0
         assert result["no_delivery_user"] == 0
         delivery = DeliveryOrder.query.filter_by(bill_id=bill.id).one()
         assert delivery.delivery_user_id == second_delivery_user.id
@@ -238,6 +250,7 @@ def test_picklist_csv_sync_matches_proxy_and_updates_existing_delivery(app):
         db.session.refresh(delivery)
 
         assert result["bills_updated"] == 1
+        assert result["bills_created"] == 0
         assert result["deliveries_updated"] == 1
         assert result["deliveries_created"] == 0
         assert parent_bill.delivery_date == date(2024, 5, 5)
