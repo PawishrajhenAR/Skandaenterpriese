@@ -198,6 +198,13 @@
             </div>
             <div class="row mb-3">
                 <div class="col-md-4">
+                    {{ form.proxy_name.label(class="form-label") }}
+                    {{ form.proxy_name(class="form-control", placeholder="Person receiving through proxy") }}
+                    {% if form.proxy_name.errors %}
+                        <div class="text-danger small">{{ form.proxy_name.errors[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4">
                     {{ form.post.label(class="form-label") }}
                     {{ form.post(class="form-control") }}
                     {% if form.post.errors %}

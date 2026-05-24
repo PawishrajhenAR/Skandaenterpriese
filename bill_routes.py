@@ -30,6 +30,24 @@ def apply_user_bill_scope(query):
     return query
 
 
+def get_or_create_customer_vendor(tenant_id, vendor_id=None, manual_name=None):
+    if vendor_id:
+        return Vendor.query.filter_by(tenant_id=tenant_id, id=vendor_id).first()
+    name = (manual_name or '').strip()
+    if not name:
+        return None
+    existing = Vendor.query.filter(
+        Vendor.tenant_id == tenant_id,
+        func.lower(Vendor.name) == name.lower()
+    ).first()
+    if existing:
+        return existing
+    vendor = Vendor(tenant_id=tenant_id, name=name, type='CUSTOMER')
+    db.session.add(vendor)
+    db.session.flush()
+    return vendor
+
+
 @bill_bp.route('/')
 @login_required
 @permission_required('view_bills')
@@ -62,9 +80,11 @@ def list():
     
     # Apply filters
     if search:
-        query = query.filter(
-            Bill.bill_number.ilike(f'%{search}%')
-        )
+        like = f'%{search}%'
+        query = query.filter(or_(
+            Bill.bill_number.ilike(like),
+            Bill.proxy_name.ilike(like),
+        ))
     
     if vendor_id:
         query = query.filter(Bill.vendor_id == vendor_id)
@@ -169,7 +189,7 @@ def list():
             'name': 'search',
             'label': 'Search',
             'type': 'search',
-            'placeholder': 'Search by bill number...',
+            'placeholder': 'Search by bill or proxy name...',
             'value': search,
             'icon': 'bi-search',
             'col_size': 3
@@ -449,6 +469,7 @@ def create():
             delivery_date=form.delivery_date.data if form.delivery_date.data else None,
             billed_to_name=form.billed_to_name.data if form.billed_to_name.data else None,
             shipped_to_name=form.shipped_to_name.data if form.shipped_to_name.data else None,
+            proxy_name=form.proxy_name.data.strip() if form.proxy_name.data else None,
             delivery_recipient=form.delivery_recipient.data if form.delivery_recipient.data else None,
             post=form.post.data if form.post.data else None
         )
@@ -1320,14 +1341,21 @@ def create_proxy_splits(id, splits):
     """Create multiple proxy bills from a parent bill"""
     bill = Bill.query.get_or_404(id)
     tenant = get_default_tenant()
+    vendors = Vendor.query.filter_by(tenant_id=tenant.id).order_by(Vendor.name).all()
     
     if request.method == 'POST':
         # Get all proxy bill data from form
         for i in range(splits):
             proxy_number = request.form.get(f'proxy_number_{i}')
             vendor_id = request.form.get(f'vendor_id_{i}', type=int)
+            manual_vendor_name = request.form.get(f'manual_vendor_name_{i}', '').strip()
             
-            if proxy_number and vendor_id:
+            if proxy_number:
+                vendor = get_or_create_customer_vendor(tenant.id, vendor_id, manual_vendor_name)
+                if not vendor:
+                    flash(f'Choose an existing vendor or enter a new vendor name for proxy bill #{i + 1}.', 'danger')
+                    return render_template('bills/create_proxy_splits.html', bill=bill, splits=splits, vendors=vendors)
+
                 # Get items for this proxy
                 descriptions = request.form.getlist(f'item_description_{i}[]')
                 quantities = request.form.getlist(f'item_quantity_{i}[]')
@@ -1352,7 +1380,7 @@ def create_proxy_splits(id, splits):
                 proxy_bill = ProxyBill(
                     tenant_id=tenant.id,
                     parent_bill_id=bill.id,
-                    vendor_id=vendor_id,
+                    vendor_id=vendor.id,
                     proxy_number=proxy_number,
                     status='DRAFT',
                     amount_total=total
@@ -1375,7 +1403,6 @@ def create_proxy_splits(id, splits):
         flash(f'Created {splits} proxy bill(s) successfully.', 'success')
         return redirect(url_for('bill.detail', id=bill.id))
     
-    vendors = Vendor.query.filter_by(tenant_id=tenant.id).order_by(Vendor.name).all()
     return render_template('bills/create_proxy_splits.html', bill=bill, splits=splits, vendors=vendors)
 
 
@@ -1423,6 +1450,29 @@ def detail(id):
                          total_paid=total_paid,
                          remaining=remaining,
                          payment_status=payment_status)
+
+
+@bill_bp.route('/<int:id>/proxy-name', methods=['POST'])
+@login_required
+@permission_required('edit_bill')
+def update_proxy_name(id):
+    tenant = get_default_tenant()
+    if not tenant:
+        flash('Tenant not found.', 'danger')
+        return redirect(url_for('bill.list'))
+
+    bill = apply_user_bill_scope(
+        Bill.query.filter(Bill.tenant_id == tenant.id, Bill.id == id)
+    ).first()
+    if not bill:
+        flash('Bill not found.', 'danger')
+        return redirect(url_for('bill.list'))
+
+    bill.proxy_name = (request.form.get('proxy_name') or '').strip() or None
+    db.session.commit()
+    log_action(current_user, 'UPDATE_BILL_PROXY_NAME', 'BILL', bill.id)
+    flash('Proxy name updated.', 'success')
+    return redirect(url_for('bill.detail', id=bill.id))
 
 
 @bill_bp.route('/<int:id>/confirm', methods=['POST'])

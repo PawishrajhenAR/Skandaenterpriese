@@ -6,12 +6,31 @@ from extensions import db
 from audit import log_action
 from auth_routes import permission_required
 from decimal import Decimal
+from sqlalchemy import func
 
 proxy_bp = Blueprint('proxy', __name__)
 
 
 def get_default_tenant():
     return Tenant.query.filter_by(code='skanda').first()
+
+
+def get_or_create_customer_vendor(tenant_id, vendor_id=None, manual_name=None):
+    if vendor_id:
+        return Vendor.query.filter_by(tenant_id=tenant_id, id=vendor_id).first()
+    name = (manual_name or '').strip()
+    if not name:
+        return None
+    existing = Vendor.query.filter(
+        Vendor.tenant_id == tenant_id,
+        func.lower(Vendor.name) == name.lower()
+    ).first()
+    if existing:
+        return existing
+    vendor = Vendor(tenant_id=tenant_id, name=name, type='CUSTOMER')
+    db.session.add(vendor)
+    db.session.flush()
+    return vendor
 
 
 @proxy_bp.route('/')
@@ -39,7 +58,9 @@ def create():
     form = ProxyBillForm()
     form.parent_bill_id.choices = [(b.id, f"{b.bill_number} - {b.vendor.name}") 
                                    for b in Bill.query.filter_by(tenant_id=tenant.id, status='CONFIRMED').all()]
-    form.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.filter_by(tenant_id=tenant.id).order_by(Vendor.name).all()]
+    form.vendor_id.choices = [('', 'Select existing vendor')] + [
+        (v.id, v.name) for v in Vendor.query.filter_by(tenant_id=tenant.id).order_by(Vendor.name).all()
+    ]
     
     # Pre-fill from query params
     parent_bill_id = request.args.get('parent_bill_id', type=int)
@@ -47,6 +68,15 @@ def create():
         form.parent_bill_id.data = parent_bill_id
     
     if form.validate_on_submit():
+        vendor = get_or_create_customer_vendor(
+            tenant.id,
+            form.vendor_id.data,
+            form.manual_vendor_name.data,
+        )
+        if not vendor:
+            flash('Choose an existing vendor or enter a new vendor name.', 'danger')
+            return render_template('proxy_bills/form.html', form=form, title='New Proxy Bill')
+
         # Get items from request
         descriptions = request.form.getlist('item_description[]')
         quantities = request.form.getlist('item_quantity[]')
@@ -72,7 +102,7 @@ def create():
         proxy_bill = ProxyBill(
             tenant_id=tenant.id,
             parent_bill_id=form.parent_bill_id.data,
-            vendor_id=form.vendor_id.data,
+            vendor_id=vendor.id,
             proxy_number=form.proxy_number.data,
             status='DRAFT',
             amount_total=total

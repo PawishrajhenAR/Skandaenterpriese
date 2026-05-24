@@ -1,9 +1,9 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, Response
 from flask_login import login_required, current_user
-from models import Vendor, Bill, CreditEntry, DeliveryOrder, Tenant
+from models import Vendor, Bill, CreditEntry, DeliveryOrder, Tenant, User, ProxyBill
 from forms import ReportDateRangeForm
 from extensions import db
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from auth_routes import permission_required
 from export_utils import (
     generate_outstanding_pdf, generate_outstanding_excel,
@@ -17,6 +17,146 @@ report_bp = Blueprint('report', __name__)
 
 def get_default_tenant():
     return Tenant.query.filter_by(code='skanda').first()
+
+
+def _parse_date_arg(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+def _delivery_report_data(tenant):
+    search = request.args.get('search', '').strip()
+    status = request.args.get('status', '').strip()
+    delivery_user_id = request.args.get('delivery_user_id', type=int)
+    vendor_id = request.args.get('vendor_id', type=int)
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+
+    query = DeliveryOrder.query.filter_by(tenant_id=tenant.id)
+
+    if search:
+        like = f'%{search}%'
+        bill_ids = [
+            b.id for b in Bill.query.filter(
+                Bill.tenant_id == tenant.id,
+                Bill.bill_number.ilike(like)
+            ).all()
+        ]
+        proxy_bill_ids = [
+            pb.id for pb in ProxyBill.query.filter(
+                ProxyBill.tenant_id == tenant.id,
+                ProxyBill.proxy_number.ilike(like)
+            ).all()
+        ]
+        query = query.filter(or_(
+            DeliveryOrder.delivery_address.ilike(like),
+            DeliveryOrder.bill_id.in_(bill_ids),
+            DeliveryOrder.proxy_bill_id.in_(proxy_bill_ids),
+        ))
+    if status:
+        query = query.filter(DeliveryOrder.status == status)
+    if delivery_user_id:
+        query = query.filter(DeliveryOrder.delivery_user_id == delivery_user_id)
+    if vendor_id:
+        bill_ids = [b.id for b in Bill.query.filter_by(tenant_id=tenant.id, vendor_id=vendor_id).all()]
+        proxy_bill_ids = [pb.id for pb in ProxyBill.query.filter_by(tenant_id=tenant.id, vendor_id=vendor_id).all()]
+        query = query.filter(or_(
+            DeliveryOrder.bill_id.in_(bill_ids),
+            DeliveryOrder.proxy_bill_id.in_(proxy_bill_ids),
+        ))
+
+    date_from_obj = _parse_date_arg(date_from)
+    if date_from_obj:
+        query = query.filter(DeliveryOrder.delivery_date >= date_from_obj)
+    date_to_obj = _parse_date_arg(date_to)
+    if date_to_obj:
+        query = query.filter(DeliveryOrder.delivery_date <= date_to_obj)
+
+    delivery_orders = query.order_by(DeliveryOrder.delivery_date.desc()).all()
+    stats = {
+        'pending': sum(1 for order in delivery_orders if order.status == 'PENDING'),
+        'in_transit': sum(1 for order in delivery_orders if order.status == 'IN_TRANSIT'),
+        'delivered': sum(1 for order in delivery_orders if order.status == 'DELIVERED'),
+        'cancelled': sum(1 for order in delivery_orders if order.status == 'CANCELLED'),
+        'total': len(delivery_orders),
+    }
+
+    delivery_users = User.query.filter_by(tenant_id=tenant.id, role='DELIVERY', is_active=True).order_by(User.username).all()
+    vendors = Vendor.query.filter_by(tenant_id=tenant.id).order_by(Vendor.name).all()
+    filters = [
+        {
+            'name': 'search',
+            'label': 'Search',
+            'type': 'search',
+            'placeholder': 'Address or bill number...',
+            'value': search,
+            'icon': 'bi-search',
+            'col_size': 3,
+        },
+        {
+            'name': 'status',
+            'label': 'Status',
+            'type': 'select',
+            'value': status,
+            'options': [
+                {'value': 'PENDING', 'label': 'Pending'},
+                {'value': 'IN_TRANSIT', 'label': 'In Transit'},
+                {'value': 'DELIVERED', 'label': 'Delivered'},
+                {'value': 'CANCELLED', 'label': 'Cancelled'},
+            ],
+            'icon': 'bi-flag',
+            'col_size': 2,
+        },
+        {
+            'name': 'delivery_user_id',
+            'label': 'Delivery User',
+            'type': 'select',
+            'value': delivery_user_id,
+            'options': [{'value': u.id, 'label': u.username} for u in delivery_users],
+            'icon': 'bi-person',
+            'col_size': 2,
+        },
+        {
+            'name': 'vendor_id',
+            'label': 'Vendor',
+            'type': 'select',
+            'value': vendor_id,
+            'options': [{'value': v.id, 'label': v.name} for v in vendors],
+            'icon': 'bi-shop',
+            'col_size': 2,
+        },
+        {
+            'name': 'date',
+            'label': 'Date Range',
+            'type': 'date-range',
+            'value_from': date_from,
+            'value_to': date_to,
+            'icon': 'bi-calendar',
+            'col_size': 3,
+        },
+    ]
+
+    active_filters = {}
+    if search:
+        active_filters['Search'] = search
+    if status:
+        active_filters['Status'] = status
+    if delivery_user_id:
+        user = User.query.get(delivery_user_id)
+        if user:
+            active_filters['Delivery User'] = user.username
+    if vendor_id:
+        vendor = Vendor.query.get(vendor_id)
+        if vendor:
+            active_filters['Vendor'] = vendor.name
+    if date_from or date_to:
+        active_filters['Date'] = f"{date_from or 'Any'} to {date_to or 'Any'}"
+
+    return stats, delivery_orders, filters, active_filters
 
 
 @report_bp.route('/outstanding')
@@ -116,27 +256,14 @@ def deliveries():
         flash('Tenant not found.', 'danger')
         return redirect(url_for('main.dashboard'))
     
-    # Count by status
-    pending = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='PENDING').count()
-    in_transit = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='IN_TRANSIT').count()
-    delivered = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='DELIVERED').count()
-    cancelled = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='CANCELLED').count()
-    total = DeliveryOrder.query.filter_by(tenant_id=tenant.id).count()
-    
-    # Get all delivery orders with relationships
-    delivery_orders = DeliveryOrder.query.filter_by(tenant_id=tenant.id).order_by(
-        DeliveryOrder.delivery_date.desc()
-    ).all()
-    
-    stats = {
-        'pending': pending,
-        'in_transit': in_transit,
-        'delivered': delivered,
-        'cancelled': cancelled,
-        'total': total
-    }
-    
-    return render_template('reports/deliveries.html', stats=stats, delivery_orders=delivery_orders)
+    stats, delivery_orders, filters, active_filters = _delivery_report_data(tenant)
+    return render_template(
+        'reports/deliveries.html',
+        stats=stats,
+        delivery_orders=delivery_orders,
+        filters=filters,
+        active_filters=active_filters,
+    )
 
 
 # Export routes for Outstanding Report
@@ -361,24 +488,7 @@ def deliveries_export_pdf():
         flash('Tenant not found.', 'danger')
         return redirect(url_for('main.dashboard'))
     
-    pending = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='PENDING').count()
-    in_transit = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='IN_TRANSIT').count()
-    delivered = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='DELIVERED').count()
-    cancelled = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='CANCELLED').count()
-    total = DeliveryOrder.query.filter_by(tenant_id=tenant.id).count()
-    
-    # Get all delivery orders with relationships
-    delivery_orders = DeliveryOrder.query.filter_by(tenant_id=tenant.id).order_by(
-        DeliveryOrder.delivery_date.desc()
-    ).all()
-    
-    stats = {
-        'pending': pending,
-        'in_transit': in_transit,
-        'delivered': delivered,
-        'cancelled': cancelled,
-        'total': total
-    }
+    stats, delivery_orders, _filters, _active_filters = _delivery_report_data(tenant)
     
     pdf_buffer = generate_deliveries_pdf(stats, delivery_orders)
     filename = f"deliveries_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -399,24 +509,7 @@ def deliveries_export_excel():
         flash('Tenant not found.', 'danger')
         return redirect(url_for('main.dashboard'))
     
-    pending = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='PENDING').count()
-    in_transit = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='IN_TRANSIT').count()
-    delivered = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='DELIVERED').count()
-    cancelled = DeliveryOrder.query.filter_by(tenant_id=tenant.id, status='CANCELLED').count()
-    total = DeliveryOrder.query.filter_by(tenant_id=tenant.id).count()
-    
-    # Get all delivery orders with relationships
-    delivery_orders = DeliveryOrder.query.filter_by(tenant_id=tenant.id).order_by(
-        DeliveryOrder.delivery_date.desc()
-    ).all()
-    
-    stats = {
-        'pending': pending,
-        'in_transit': in_transit,
-        'delivered': delivered,
-        'cancelled': cancelled,
-        'total': total
-    }
+    stats, delivery_orders, _filters, _active_filters = _delivery_report_data(tenant)
     
     excel_buffer = generate_deliveries_excel(stats, delivery_orders)
     filename = f"deliveries_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"

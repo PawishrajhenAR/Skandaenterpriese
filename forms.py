@@ -46,6 +46,7 @@ class BillForm(FlaskForm):
     delivery_date = DateField('Delivery Date', validators=[Optional()])
     billed_to_name = StringField('Billed To Name', validators=[Optional()])
     shipped_to_name = StringField('Shipped To Name', validators=[Optional()])
+    proxy_name = StringField('Proxy Name', validators=[Optional()])
     delivery_recipient = StringField('Delivery Recipient (DR)', validators=[Optional()])
     post = StringField('Post', validators=[Optional()])
     is_proxy = SelectField('Create Proxy Bills?', choices=[
@@ -72,7 +73,8 @@ class BillForm(FlaskForm):
 
 class ProxyBillForm(FlaskForm):
     parent_bill_id = SelectField('Parent Bill', coerce=int, validators=[DataRequired()])
-    vendor_id = SelectField('Vendor (End Customer)', coerce=int, validators=[DataRequired()])
+    vendor_id = SelectField('Vendor (End Customer)', coerce=coerce_int_or_none, validators=[Optional()])
+    manual_vendor_name = StringField('New Vendor Name', validators=[Optional()])
     proxy_number = StringField('Proxy Bill Number', validators=[DataRequired()])
 
 

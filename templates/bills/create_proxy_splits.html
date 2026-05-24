@@ -27,12 +27,19 @@
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Vendor (End Customer)</label>
-                    <select name="vendor_id_{{ i }}" class="form-select" required>
+                    <select name="vendor_id_{{ i }}" class="form-select">
                         <option value="">Select Vendor</option>
                         {% for vendor in vendors %}
                         <option value="{{ vendor.id }}">{{ vendor.name }}</option>
                         {% endfor %}
                     </select>
+                    <div class="form-text">Choose an existing vendor or type a new one below.</div>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">New Vendor Name</label>
+                    <input type="text" name="manual_vendor_name_{{ i }}" class="form-control" placeholder="Type new customer/vendor name">
                 </div>
             </div>
             

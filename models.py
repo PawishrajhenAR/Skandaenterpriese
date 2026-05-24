@@ -173,6 +173,7 @@ class Bill(db.Model):
     delivery_date = db.Column(db.Date, nullable=True)
     billed_to_name = db.Column(db.String(200), nullable=True)
     shipped_to_name = db.Column(db.String(200), nullable=True)
+    proxy_name = db.Column(db.String(200), nullable=True)
     delivery_recipient = db.Column(db.String(200), nullable=True)  # DR field
     post = db.Column(db.String(100), nullable=True)
     

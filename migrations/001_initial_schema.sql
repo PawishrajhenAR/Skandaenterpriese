@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS bills (
     delivery_date DATE,
     billed_to_name VARCHAR(200),
     shipped_to_name VARCHAR(200),
+    proxy_name VARCHAR(200),
     delivery_recipient VARCHAR(200), -- DR field
     post VARCHAR(100)
 );
@@ -208,6 +209,8 @@ CREATE INDEX IF NOT EXISTS idx_ocr_jobs_tenant_id ON ocr_jobs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ocr_jobs_bill_id ON ocr_jobs(bill_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_id ON audit_logs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS proxy_name VARCHAR(200);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id);

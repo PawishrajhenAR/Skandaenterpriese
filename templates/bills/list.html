@@ -36,6 +36,7 @@
                     <tr>
                         <th class="sortable">Bill Number <i class="bi bi-arrow-down-up"></i></th>
                         <th class="sortable">Vendor <i class="bi bi-arrow-down-up"></i></th>
+                        <th>Proxy Name</th>
                         <th class="sortable">Date <i class="bi bi-arrow-down-up"></i></th>
                         <th>Type</th>
                         <th>Status</th>
@@ -52,6 +53,13 @@
                         </td>
                         <td>
                             <i class="bi bi-person"></i> {{ bill.vendor.name }}
+                        </td>
+                        <td>
+                            {% if bill.proxy_name %}
+                                <i class="bi bi-person-vcard"></i> {{ bill.proxy_name }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
                         <td>
                             <i class="bi bi-calendar"></i> {{ bill.bill_date.strftime('%Y-%m-%d') }}
