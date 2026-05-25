@@ -30,7 +30,7 @@
 {% endif %}
 
 <div class="row">
-    <div class="col-md-3 mb-3">
+    <div class="col-md-2 mb-3">
         <div class="card text-center">
             <div class="card-body">
                 <h5 class="card-title">Pending</h5>
@@ -38,7 +38,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3 mb-3">
+    <div class="col-md-2 mb-3">
         <div class="card text-center">
             <div class="card-body">
                 <h5 class="card-title">In Transit</h5>
@@ -46,7 +46,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3 mb-3">
+    <div class="col-md-2 mb-3">
         <div class="card text-center">
             <div class="card-body">
                 <h5 class="card-title">Delivered</h5>
@@ -54,7 +54,23 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3 mb-3">
+    <div class="col-md-2 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">Not Delivered</h5>
+                <h2 class="text-secondary">{{ stats.not_delivered }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">Shop Closed</h5>
+                <h2 class="text-dark">{{ stats.shop_closed }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 mb-3">
         <div class="card text-center">
             <div class="card-body">
                 <h5 class="card-title">Cancelled</h5>
@@ -106,9 +122,11 @@
                                 {% if order.status == 'PENDING' %}bg-warning
                                 {% elif order.status == 'IN_TRANSIT' %}bg-info
                                 {% elif order.status == 'DELIVERED' %}bg-success
+                                {% elif order.status == 'NOT_DELIVERED' %}bg-secondary
+                                {% elif order.status == 'SHOP_CLOSED' %}bg-dark
                                 {% elif order.status == 'CANCELLED' %}bg-danger
                                 {% endif %}">
-                                {{ order.status }}
+                                {{ order.status.replace('_', ' ') }}
                             </span>
                         </td>
                         <td>{{ order.delivery_address[:100] }}{% if order.delivery_address|length > 100 %}...{% endif %}</td>

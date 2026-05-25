@@ -461,6 +461,8 @@ def generate_deliveries_pdf(stats, delivery_orders=None):
         ('Pending', stats['pending'], '#fff3cd'),
         ('In Transit', stats['in_transit'], '#d1ecf1'),
         ('Delivered', stats['delivered'], '#d4edda'),
+        ('Not Delivered', stats.get('not_delivered', 0), '#e2e3e5'),
+        ('Shop Closed', stats.get('shop_closed', 0), '#d6d8d9'),
         ('Cancelled', stats['cancelled'], '#f8d7da')
     ]
     
@@ -499,6 +501,8 @@ def generate_deliveries_pdf(stats, delivery_orders=None):
             colors.HexColor('#fff3cd'),
             colors.HexColor('#d1ecf1'),
             colors.HexColor('#d4edda'),
+            colors.HexColor('#e2e3e5'),
+            colors.HexColor('#d6d8d9'),
             colors.HexColor('#f8d7da')
         ]),
         ('LEFTPADDING', (0, 1), (-1, -2), 12),
@@ -553,6 +557,8 @@ def generate_deliveries_pdf(stats, delivery_orders=None):
                 'PENDING': '#f57f17',
                 'IN_TRANSIT': '#0277bd',
                 'DELIVERED': '#2e7d32',
+                'NOT_DELIVERED': '#6c757d',
+                'SHOP_CLOSED': '#343a40',
                 'CANCELLED': '#c62828'
             }
             status_color = status_colors.get(order.status, '#000000')
@@ -933,6 +939,8 @@ def generate_deliveries_excel(stats, delivery_orders=None):
         ('Pending', stats['pending'], 'fff3cd'),
         ('In Transit', stats['in_transit'], 'd1ecf1'),
         ('Delivered', stats['delivered'], 'd4edda'),
+        ('Not Delivered', stats.get('not_delivered', 0), 'e2e3e5'),
+        ('Shop Closed', stats.get('shop_closed', 0), 'd6d8d9'),
         ('Cancelled', stats['cancelled'], 'f8d7da')
     ]
     
@@ -999,6 +1007,8 @@ def generate_deliveries_excel(stats, delivery_orders=None):
                 'PENDING': 'f57f17',
                 'IN_TRANSIT': '0277bd',
                 'DELIVERED': '2e7d32',
+                'NOT_DELIVERED': '6c757d',
+                'SHOP_CLOSED': '343a40',
                 'CANCELLED': 'c62828'
             }
             status_color = status_colors.get(order.status, '000000')

@@ -81,6 +81,8 @@ def _delivery_report_data(tenant):
         'pending': sum(1 for order in delivery_orders if order.status == 'PENDING'),
         'in_transit': sum(1 for order in delivery_orders if order.status == 'IN_TRANSIT'),
         'delivered': sum(1 for order in delivery_orders if order.status == 'DELIVERED'),
+        'not_delivered': sum(1 for order in delivery_orders if order.status == 'NOT_DELIVERED'),
+        'shop_closed': sum(1 for order in delivery_orders if order.status == 'SHOP_CLOSED'),
         'cancelled': sum(1 for order in delivery_orders if order.status == 'CANCELLED'),
         'total': len(delivery_orders),
     }
@@ -106,6 +108,8 @@ def _delivery_report_data(tenant):
                 {'value': 'PENDING', 'label': 'Pending'},
                 {'value': 'IN_TRANSIT', 'label': 'In Transit'},
                 {'value': 'DELIVERED', 'label': 'Delivered'},
+                {'value': 'NOT_DELIVERED', 'label': 'Not Delivered'},
+                {'value': 'SHOP_CLOSED', 'label': 'Shop Closed'},
                 {'value': 'CANCELLED', 'label': 'Cancelled'},
             ],
             'icon': 'bi-flag',

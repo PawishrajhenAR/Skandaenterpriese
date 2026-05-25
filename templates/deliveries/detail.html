@@ -48,6 +48,10 @@
                             <span class="badge bg-info">IN_TRANSIT</span>
                         {% elif delivery.status == 'DELIVERED' %}
                             <span class="badge bg-success">DELIVERED</span>
+                        {% elif delivery.status == 'NOT_DELIVERED' %}
+                            <span class="badge bg-secondary">NOT DELIVERED</span>
+                        {% elif delivery.status == 'SHOP_CLOSED' %}
+                            <span class="badge bg-dark">SHOP CLOSED</span>
                         {% else %}
                             <span class="badge bg-danger">CANCELLED</span>
                         {% endif %}
@@ -74,16 +78,53 @@
                     <div class="mb-3">
                         <label class="form-label">Status</label>
                         <select name="status" class="form-select">
-                            <option value="PENDING" {% if delivery.status == 'PENDING' %}selected{% endif %}>PENDING</option>
-                            <option value="IN_TRANSIT" {% if delivery.status == 'IN_TRANSIT' %}selected{% endif %}>IN_TRANSIT</option>
-                            <option value="DELIVERED" {% if delivery.status == 'DELIVERED' %}selected{% endif %}>DELIVERED</option>
-                            <option value="CANCELLED" {% if delivery.status == 'CANCELLED' %}selected{% endif %}>CANCELLED</option>
+                            {% for status in delivery_statuses %}
+                            <option value="{{ status }}" {% if delivery.status == status %}selected{% endif %}>{{ status.replace('_', ' ') }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <button type="submit" class="btn btn-primary w-100">Update Status</button>
                 </form>
                 {% else %}
                 <p class="text-muted">You do not have permission to update delivery status.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">Collected Amount</h5>
+            </div>
+            <div class="card-body">
+                {% if has_permission('update_delivery') and (delivery.bill or delivery.proxy_bill) %}
+                <form method="POST" action="{{ url_for('delivery.update_collection', id=delivery.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">Received Amount</label>
+                        <input type="number" step="0.01" min="0" name="collected_amount" class="form-control"
+                               value="{{ collection_entry.amount if collection_entry else '0.00' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment Method</label>
+                        <select name="payment_method" class="form-select">
+                            {% set method = collection_entry.payment_method if collection_entry else 'CASH' %}
+                            <option value="CASH" {% if method == 'CASH' %}selected{% endif %}>Cash</option>
+                            <option value="UPI" {% if method == 'UPI' %}selected{% endif %}>UPI</option>
+                            <option value="BANK" {% if method == 'BANK' %}selected{% endif %}>Bank Transfer</option>
+                            <option value="CHEQUE" {% if method == 'CHEQUE' %}selected{% endif %}>Cheque</option>
+                            <option value="CARD" {% if method == 'CARD' %}selected{% endif %}>Card</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" name="reference_number" class="form-control"
+                               value="{{ collection_entry.reference_number if collection_entry else '' }}">
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">Save Collected Amount</button>
+                </form>
+                {% elif not (delivery.bill or delivery.proxy_bill) %}
+                <p class="text-muted mb-0">No linked bill or proxy bill for collection.</p>
+                {% else %}
+                <p class="text-muted mb-0">You do not have permission to update collection.</p>
                 {% endif %}
             </div>
         </div>

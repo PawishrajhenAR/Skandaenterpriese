@@ -1,18 +1,52 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
-from models import DeliveryOrder, Bill, ProxyBill, User, Tenant, Vendor
+from models import DeliveryOrder, Bill, ProxyBill, User, Tenant, Vendor, CreditEntry
 from forms import DeliveryOrderForm
 from extensions import db
 from audit import log_action
 from auth_routes import permission_required
 from sqlalchemy import or_
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 delivery_bp = Blueprint('delivery', __name__)
+
+DELIVERY_STATUSES = ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'NOT_DELIVERED', 'SHOP_CLOSED', 'CANCELLED']
 
 
 def get_default_tenant():
     return Tenant.query.filter_by(code='skanda').first()
+
+
+def _delivery_scope_query(tenant, delivery_id):
+    query = DeliveryOrder.query.filter_by(tenant_id=tenant.id, id=delivery_id)
+    if current_user.role == 'DELIVERY':
+        query = query.filter_by(delivery_user_id=current_user.id)
+    return query
+
+
+def _delivery_collection_entry(delivery):
+    marker = f'Delivery collection for delivery order #{delivery.id}'
+    query = CreditEntry.query.filter_by(
+        tenant_id=delivery.tenant_id,
+        direction='INCOMING',
+        notes=marker,
+    )
+    if delivery.bill_id:
+        query = query.filter_by(bill_id=delivery.bill_id)
+    elif delivery.proxy_bill_id:
+        query = query.filter_by(proxy_bill_id=delivery.proxy_bill_id)
+    else:
+        return None
+    return query.first()
+
+
+def _delivery_collection_target(delivery):
+    if delivery.bill:
+        return delivery.bill.vendor_id, delivery.bill_id, None
+    if delivery.proxy_bill:
+        return delivery.proxy_bill.vendor_id, None, delivery.proxy_bill_id
+    return None, None, None
 
 
 @delivery_bp.route('/')
@@ -103,6 +137,8 @@ def list():
                 {'value': 'PENDING', 'label': 'Pending'},
                 {'value': 'IN_TRANSIT', 'label': 'In Transit'},
                 {'value': 'DELIVERED', 'label': 'Delivered'},
+                {'value': 'NOT_DELIVERED', 'label': 'Not Delivered'},
+                {'value': 'SHOP_CLOSED', 'label': 'Shop Closed'},
                 {'value': 'CANCELLED', 'label': 'Cancelled'}
             ],
             'icon': 'bi-flag',
@@ -215,11 +251,14 @@ def create():
 @permission_required('view_deliveries')
 def detail(id):
     tenant = get_default_tenant()
-    delivery = DeliveryOrder.query.filter_by(tenant_id=tenant.id, id=id).first_or_404()
-    if current_user.role == 'DELIVERY' and delivery.delivery_user_id != current_user.id:
-        flash('Delivery order not found.', 'danger')
-        return redirect(url_for('delivery.list'))
-    return render_template('deliveries/detail.html', delivery=delivery)
+    delivery = _delivery_scope_query(tenant, id).first_or_404()
+    collection_entry = _delivery_collection_entry(delivery)
+    return render_template(
+        'deliveries/detail.html',
+        delivery=delivery,
+        delivery_statuses=DELIVERY_STATUSES,
+        collection_entry=collection_entry,
+    )
 
 
 @delivery_bp.route('/<int:id>/update-status', methods=['POST'])
@@ -227,17 +266,77 @@ def detail(id):
 @permission_required('update_delivery')
 def update_status(id):
     tenant = get_default_tenant()
-    delivery = DeliveryOrder.query.filter_by(tenant_id=tenant.id, id=id).first_or_404()
-    if current_user.role == 'DELIVERY' and delivery.delivery_user_id != current_user.id:
-        flash('Delivery order not found.', 'danger')
-        return redirect(url_for('delivery.list'))
+    delivery = _delivery_scope_query(tenant, id).first_or_404()
     new_status = request.form.get('status')
     
-    if new_status in ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED']:
+    if new_status in DELIVERY_STATUSES:
         delivery.status = new_status
         db.session.commit()
         log_action(current_user, 'UPDATE_DELIVERY_STATUS', 'DELIVERY_ORDER', delivery.id)
         flash('Delivery status updated.', 'success')
     
+    return redirect(url_for('delivery.detail', id=delivery.id))
+
+
+@delivery_bp.route('/<int:id>/collection', methods=['POST'])
+@login_required
+@permission_required('update_delivery')
+def update_collection(id):
+    tenant = get_default_tenant()
+    delivery = _delivery_scope_query(tenant, id).first_or_404()
+    vendor_id, bill_id, proxy_bill_id = _delivery_collection_target(delivery)
+    if not vendor_id:
+        flash('This delivery has no linked bill or proxy bill for collection.', 'danger')
+        return redirect(url_for('delivery.detail', id=delivery.id))
+
+    raw_amount = (request.form.get('collected_amount') or '').strip()
+    try:
+        amount = Decimal(raw_amount or '0')
+    except (InvalidOperation, ValueError):
+        flash('Invalid collected amount.', 'danger')
+        return redirect(url_for('delivery.detail', id=delivery.id))
+
+    if amount < 0:
+        flash('Collected amount cannot be negative.', 'danger')
+        return redirect(url_for('delivery.detail', id=delivery.id))
+
+    payment_method = request.form.get('payment_method') or 'CASH'
+    reference_number = (request.form.get('reference_number') or '').strip() or None
+    marker = f'Delivery collection for delivery order #{delivery.id}'
+    collection_entry = _delivery_collection_entry(delivery)
+
+    if amount == 0:
+        if collection_entry:
+            db.session.delete(collection_entry)
+            db.session.commit()
+            log_action(current_user, 'CLEAR_DELIVERY_COLLECTION', 'DELIVERY_ORDER', delivery.id)
+            flash('Collected amount cleared.', 'success')
+        else:
+            flash('Collected amount is already empty.', 'info')
+        return redirect(url_for('delivery.detail', id=delivery.id))
+
+    if collection_entry:
+        collection_entry.amount = amount
+        collection_entry.payment_method = payment_method
+        collection_entry.reference_number = reference_number
+        collection_entry.vendor_id = vendor_id
+    else:
+        collection_entry = CreditEntry(
+            tenant_id=tenant.id,
+            bill_id=bill_id,
+            proxy_bill_id=proxy_bill_id,
+            vendor_id=vendor_id,
+            amount=amount,
+            direction='INCOMING',
+            payment_method=payment_method,
+            payment_date=delivery.delivery_date,
+            reference_number=reference_number,
+            notes=marker,
+        )
+        db.session.add(collection_entry)
+
+    db.session.commit()
+    log_action(current_user, 'UPDATE_DELIVERY_COLLECTION', 'DELIVERY_ORDER', delivery.id)
+    flash('Collected amount updated.', 'success')
     return redirect(url_for('delivery.detail', id=delivery.id))
 
